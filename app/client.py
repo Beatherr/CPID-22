@@ -113,6 +113,22 @@ def acik_uygulamalari_topla():
     )
 
 
+def uygulama_kapat(uygulama_adi):
+    temiz_ad = uygulama_adi.split(" (")[0].strip().lower()
+    kapatilan = 0
+    for proc in psutil.process_iter(['name', 'pid']):
+        try:
+            p_name = Path(proc.info['name']).stem.lower()
+            if p_name == temiz_ad:
+                psutil.Process(proc.info['pid']).terminate()
+                kapatilan += 1
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    if kapatilan == 0:
+        raise ValueError(f"'{uygulama_adi}' adında çalışan aktif bir süreç bulunamadı.")
+    return f"'{uygulama_adi}' başarıyla sonlandırıldı."
+
+
 def kaynak_tuketimindeki_surecleri_getir(memory_total):
     surecler = []
     okunamayan_surec = 0
