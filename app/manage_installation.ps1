@@ -19,7 +19,7 @@ $legacyParentScripts = @('bot.py', 'client.py', 'start_services.py') | ForEach-O
 }
 foreach ($script in $currentScripts) {
     if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
-        throw "Expected application file not found: $script"
+        throw "Gerekli uygulama dosyası bulunamadı: $script"
     }
 }
 $scripts = $currentScripts + $legacyScripts + $legacyParentScripts
@@ -53,7 +53,7 @@ foreach ($process in $processes) {
         }
         try {
             Stop-Process -Id ([int]$process.ProcessId) -Force -ErrorAction Stop
-            Write-Output "Stopped PC Activity Monitor process $($process.ProcessId)."
+            Write-Output "PC etkinlik izleyicisi işlemi durduruldu: $($process.ProcessId)."
         }
         catch {
             if (Get-Process -Id ([int]$process.ProcessId) -ErrorAction SilentlyContinue) {
@@ -95,7 +95,7 @@ if ($stateDirectory -and $expectedStateDirectory -eq [System.IO.Path]::GetFullPa
             }
             catch {
                 if ($attempt -eq 5) {
-                    throw "Could not remove the app data directory after stopping its processes: $($_.Exception.Message)"
+                    throw "İşlemler durdurulduktan sonra uygulama verileri klasörü kaldırılamadı: $($_.Exception.Message)"
                 }
                 Start-Sleep -Seconds 1
             }
@@ -103,5 +103,5 @@ if ($stateDirectory -and $expectedStateDirectory -eq [System.IO.Path]::GetFullPa
     }
 }
 
-Write-Output 'Removed the Startup-folder shortcut, any legacy scheduled task, and per-user configuration, logs, and private virtual environment.'
-Write-Output 'The project source folder remains. Previously installed global Python packages are not removed because other applications may use them.'
+Write-Output 'Başlangıç kısayolu, varsa eski zamanlanmış görev, kullanıcı yapılandırması, günlükler ve özel sanal ortam kaldırıldı.'
+Write-Output 'Proje kaynak klasörü korundu. Başka uygulamalar kullanabileceğinden genel Python paketleri kaldırılmadı.'

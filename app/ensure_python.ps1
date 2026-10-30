@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $installerId = 'Python.Python.3.14'
 
-function Get-Python314Path {
+function Python314YolunuBul {
     $pythonLauncher = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($pythonLauncher) {
         $result = & $pythonLauncher.Source -3.14 -c "import sys; print(sys.executable)" 2>$null
@@ -31,7 +31,7 @@ function Get-Python314Path {
     return $null
 }
 
-function Add-CurrentUserPath([string]$Directory) {
+function KullaniciYolunaEkle([string]$Directory) {
     $expanded = [Environment]::ExpandEnvironmentVariables($Directory)
     if (-not (Test-Path -LiteralPath $expanded -PathType Container)) {
         return
@@ -62,14 +62,14 @@ function Add-CurrentUserPath([string]$Directory) {
     }
 }
 
-$pythonPath = Get-Python314Path
+$pythonPath = Python314YolunuBul
 if (-not $pythonPath) {
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
     if (-not $winget) {
-        throw 'Python 3.14 is not installed and winget is unavailable. Install Python 3.14 from python.org, then rerun setup.bat.'
+        throw 'Python 3.14 yüklü değil ve winget kullanılamıyor. python.org üzerinden Python 3.14 kurup setup.bat dosyasını yeniden çalıştırın.'
     }
 
-    Write-Output 'Python 3.14 was not found. Installing the official Python Software Foundation package...'
+    Write-Output 'Python 3.14 bulunamadı. Python Yazılım Vakfı tarafından yayımlanan resmi paket kuruluyor...'
     & $winget.Source install `
         --id $installerId `
         --exact `
@@ -79,13 +79,13 @@ if (-not $pythonPath) {
         --accept-package-agreements `
         --override '/quiet InstallAllUsers=0 PrependPath=1 Include_launcher=1 Include_test=0'
     if ($LASTEXITCODE -ne 0) {
-        throw "The official Python 3.14 installation failed with exit code $LASTEXITCODE."
+        throw "Resmi Python 3.14 kurulumu başarısız oldu. Çıkış kodu: $LASTEXITCODE."
     }
 
     $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $env:Path = "$userPath;$machinePath;$env:Path"
-    $pythonPath = Get-Python314Path
+    $pythonPath = Python314YolunuBul
 }
 
 if (-not $pythonPath) {
@@ -107,15 +107,15 @@ if (-not $pythonPath) {
 }
 
 if (-not $pythonPath) {
-    throw 'Python installation finished, but Python 3.14 could not be located. Restart Windows and rerun setup.bat.'
+    throw 'Python kurulumu tamamlandı ancak Python 3.14 bulunamadı. Windows''u yeniden başlatıp setup.bat dosyasını tekrar çalıştırın.'
 }
 
 $pythonDirectory = Split-Path -Parent $pythonPath
-Add-CurrentUserPath $pythonDirectory
-Add-CurrentUserPath (Join-Path $pythonDirectory 'Scripts')
+KullaniciYolunaEkle $pythonDirectory
+KullaniciYolunaEkle (Join-Path $pythonDirectory 'Scripts')
 $version = & $pythonPath -c "import sys; print('.'.join(map(str, sys.version_info[:3])))"
 if ($LASTEXITCODE -ne 0) {
-    throw 'Python 3.14 was found but could not be started.'
+    throw 'Python 3.14 bulundu ancak başlatılamadı.'
 }
 
 $output = [System.IO.Path]::GetFullPath($PythonPathOutput)
@@ -124,5 +124,5 @@ if (-not (Test-Path -LiteralPath $outputDirectory -PathType Container)) {
     New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
 }
 [System.IO.File]::WriteAllText($output, $pythonPath, [System.Text.Encoding]::ASCII)
-Write-Output "Using Python $version at $pythonPath"
-Write-Output 'Python 3.14 and its Scripts directory are available on this Windows user PATH.'
+Write-Output "Python $version kullanılacak: $pythonPath"
+Write-Output 'Python 3.14 ve Scripts klasörü bu Windows kullanıcısının PATH değişkenine eklendi.'

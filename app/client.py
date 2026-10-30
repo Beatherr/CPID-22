@@ -1,40 +1,48 @@
+from contextlib import closing
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
+
 import io
 import logging
-from logging.handlers import RotatingFileHandler
 import msvcrt
 import os
 from pathlib import Path
 import platform
+import sqlite3
 import socket
 import subprocess
 import threading
 import time
-from datetime import datetime
 
 import psutil
 import pystray
 from PIL import Image, ImageDraw, ImageGrab
 
 
-APP_NAME = "PCActivityMonitor"
-STATE_DIR = Path(os.environ["APPDATA"]) / APP_NAME
-STATE_DIR.mkdir(parents=True, exist_ok=True)
-LOG_FILE = STATE_DIR / "client.log"
-INSTANCE_LOCK_FILE = STATE_DIR / "client_instance.lock"
-logger = logging.getLogger("pc_self_control")
+UYGULAMA_ADI = "PCActivityMonitor"
+DURUM_DIZINI = Path(os.environ["APPDATA"]) / UYGULAMA_ADI
+DURUM_DIZINI.mkdir(parents=True, exist_ok=True)
+GUNLUK_DOSYASI = DURUM_DIZINI / "client.log"
+TEKIL_ORNEK_KILIT_DOSYASI = DURUM_DIZINI / "client_instance.lock"
+GECMIS_DOSYASI = DURUM_DIZINI / "metrics.sqlite3"
+GECMIS_SAKLAMA_SANIYESI = 7 * 24 * 60 * 60
+GECMIS_ORNEK_ARALIGI_SANIYE = 30
+logger = logging.getLogger("pc_kisisel_kontrol")
 logger.setLevel(logging.INFO)
 logger.addHandler(
-    RotatingFileHandler(LOG_FILE, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    RotatingFileHandler(GUNLUK_DOSYASI, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
 )
 
-ACTION_LOCK = threading.Lock()
-pending_action = None
-pending_action_until = 0
-shutdown_event = threading.Event()
+ISLEM_KILIDI = threading.Lock()
+AG_KILIDI = threading.Lock()
+bekleyen_guc_islemi = None
+bekleyen_islem_bitis_zamani = 0
+kapatma_olayi = threading.Event()
+onceki_ag_ornegi = None
 
 
-def acquire_instance_lock():
-    lock_file = INSTANCE_LOCK_FILE.open("a+b")
+def tekil_ornek_kilidi_al():
+    lock_file = TEKIL_ORNEK_KILIT_DOSYASI.open("a+b")
     lock_file.seek(0, os.SEEK_END)
     if lock_file.tell() == 0:
         lock_file.write(b"\0")
@@ -48,7 +56,7 @@ def acquire_instance_lock():
     return lock_file
 
 
-def get_open_applications():
+def acik_uygulamalari_topla():
     import ctypes
     from ctypes import wintypes
 
@@ -105,8 +113,168 @@ def get_open_applications():
     )
 
 
-def collect_status():
-    global pending_action, pending_action_until
+def kaynak_tuketimindeki_surecleri_getir(memory_total):
+    surecler = []
+    okunamayan_surec = 0
+    for surec in psutil.process_iter(["pid", "name", "memory_info", "cpu_percent"]):
+        try:
+            bilgi = surec.info
+            ad = bilgi.get("name")
+            bellek_bilgisi = bilgi.get("memory_info")
+            if not ad or bellek_bilgisi is None:
+                continue
+            surecler.append(
+                {
+                    "ad": Path(ad).stem,
+                    "cpu": round(float(bilgi.get("cpu_percent") or 0.0), 1),
+                    "bellek_mb": round(bellek_bilgisi.rss / (1024 ** 2), 1),
+                    "bellek_yuzde": round(bellek_bilgisi.rss / memory_total * 100, 1),
+                }
+            )
+        except (OSError, psutil.Error):
+            okunamayan_surec += 1
+    surecler.sort(key=lambda surec: (surec["bellek_mb"], surec["cpu"]), reverse=True)
+    return surecler[:5], okunamayan_surec
+
+
+def ag_ozetini_topla():
+    global onceki_ag_ornegi
+    sayaclar = psutil.net_io_counters()
+    if sayaclar is None:
+        raise RuntimeError("Ağ trafiği sayaçları okunamadı.")
+    arayuzler = psutil.net_if_stats()
+
+    simdi = time.monotonic()
+    with AG_KILIDI:
+        onceki = onceki_ag_ornegi
+        onceki_ag_ornegi = (
+            simdi,
+            sayaclar.bytes_sent,
+            sayaclar.bytes_recv,
+        )
+    if onceki is None or simdi <= onceki[0]:
+        gonderim_hizi = None
+        alim_hizi = None
+    else:
+        gecen_sure = simdi - onceki[0]
+        gonderim_hizi = max(0, sayaclar.bytes_sent - onceki[1]) / gecen_sure
+        alim_hizi = max(0, sayaclar.bytes_recv - onceki[2]) / gecen_sure
+    return {
+        "etkin_arayuz_sayisi": sum(1 for arayuz in arayuzler.values() if arayuz.isup),
+        "gonderilen_bayt": sayaclar.bytes_sent,
+        "alinan_bayt": sayaclar.bytes_recv,
+        "gonderim_hizi": gonderim_hizi,
+        "alim_hizi": alim_hizi,
+    }
+
+
+def boyutu_bicimlendir(bayt):
+    deger = float(bayt)
+    for birim in ("B", "KB", "MB", "GB", "TB"):
+        if deger < 1024 or birim == "TB":
+            return f"{deger:.1f} {birim}"
+        deger /= 1024
+
+
+def gecmisi_kaydet(cpu, bellek, disk):
+    simdi = time.time()
+    try:
+        with closing(sqlite3.connect(GECMIS_DOSYASI, timeout=5)) as baglanti:
+            baglanti.execute(
+                """
+                CREATE TABLE IF NOT EXISTS kaynak_gecmisi (
+                    kayit_zamani REAL PRIMARY KEY,
+                    cpu REAL NOT NULL,
+                    bellek REAL NOT NULL,
+                    disk REAL NOT NULL
+                )
+                """
+            )
+            son_kayit = baglanti.execute(
+                "SELECT MAX(kayit_zamani) FROM kaynak_gecmisi"
+            ).fetchone()[0]
+            if son_kayit is None or simdi - son_kayit >= GECMIS_ORNEK_ARALIGI_SANIYE:
+                baglanti.execute(
+                    """
+                    INSERT INTO kaynak_gecmisi
+                    (kayit_zamani, cpu, bellek, disk)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (simdi, cpu, bellek, disk),
+                )
+            baglanti.execute(
+                "DELETE FROM kaynak_gecmisi WHERE kayit_zamani < ?",
+                (simdi - GECMIS_SAKLAMA_SANIYESI,),
+            )
+            baglanti.commit()
+    except sqlite3.Error:
+        logger.exception("Kaynak kullanım geçmişi yerel veritabanına kaydedilemedi.")
+        return "Geçmiş veritabanına kaydedilemedi; client.log dosyasını inceleyin."
+    return None
+
+
+def gecmis_verilerini_getir(saat=1):
+    if not 1 <= saat <= 168:
+        raise ValueError("Geçmiş aralığı 1 ile 168 saat arasında olmalıdır.")
+    try:
+        with closing(sqlite3.connect(GECMIS_DOSYASI, timeout=5)) as baglanti:
+            satirlar = baglanti.execute(
+                """
+                SELECT kayit_zamani, cpu, bellek, disk
+                FROM kaynak_gecmisi
+                WHERE kayit_zamani >= ?
+                ORDER BY kayit_zamani
+                """,
+                (time.time() - saat * 60 * 60,),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        logger.exception("Kaynak kullanım geçmişi okunamadı.")
+        raise RuntimeError("Kaynak kullanım geçmişi okunamadı.") from exc
+    return satirlar
+
+
+def gecmis_grafigi_olustur(saat=1):
+    satirlar = gecmis_verilerini_getir(saat)
+    genislik, yukseklik = 1200, 650
+    sol, ust, sag, alt = 90, 90, 1140, 550
+    gorsel = Image.new("RGB", (genislik, yukseklik), "#101827")
+    cizim = ImageDraw.Draw(gorsel)
+    cizim.text((sol, 28), f"Son {saat} saat • Sistem kaynak geçmişi", fill="#ffffff")
+    cizim.text((sol, 58), "CPU, bellek ve disk kullanımı (%)", fill="#aab8ca")
+
+    for deger in range(0, 101, 20):
+        y = alt - (alt - ust) * deger / 100
+        cizim.line((sol, y, sag, y), fill="#34445a", width=1)
+        cizim.text((42, y - 7), str(deger), fill="#aab8ca")
+
+    if len(satirlar) < 2:
+        cizim.text((sol, 300), "Grafik için henüz yeterli geçmiş verisi yok.", fill="#ffffff")
+        cizim.text((sol, 330), "Veriler yerel olarak 7 güne kadar saklanır.", fill="#aab8ca")
+    else:
+        renkler = ("#4da3ff", "#53d18c", "#ffba52")
+        for sutun, renk in zip((1, 2, 3), renkler):
+            noktalar = []
+            for sira, satir in enumerate(satirlar):
+                x = sol + (sag - sol) * sira / (len(satirlar) - 1)
+                y = alt - (alt - ust) * min(100, max(0, satir[sutun])) / 100
+                noktalar.append((x, y))
+            cizim.line(noktalar, fill=renk, width=4)
+        for x, yazi in ((sol, "En eski"), (sag - 55, "Şimdi")):
+            cizim.text((x, alt + 18), yazi, fill="#aab8ca")
+        for sira, (etiket, renk) in enumerate(
+            (("CPU", renkler[0]), ("Bellek", renkler[1]), ("Disk", renkler[2]))
+        ):
+            x = sol + sira * 150
+            cizim.line((x, yukseklik - 25, x + 24, yukseklik - 25), fill=renk, width=4)
+            cizim.text((x + 32, yukseklik - 32), etiket, fill="#ffffff")
+    cikti = io.BytesIO()
+    gorsel.save(cikti, format="PNG", optimize=True)
+    cikti.seek(0)
+    return cikti
+
+
+def durum_topla():
+    global bekleyen_guc_islemi, bekleyen_islem_bitis_zamani
     try:
         cpu = round(psutil.cpu_percent(interval=None))
         memory = round(psutil.virtual_memory().percent)
@@ -118,60 +286,84 @@ def collect_status():
         battery = psutil.sensors_battery()
         memory_stats = psutil.virtual_memory()
     except (OSError, psutil.Error) as exc:
-        logger.exception("Could not collect system status.")
+        logger.exception("Bilgisayar durumu toplanamadı.")
         raise RuntimeError("Bilgisayar durumu okunamadı.") from exc
 
-    with ACTION_LOCK:
-        if pending_action and time.time() >= pending_action_until:
-            pending_action = None
-            pending_action_until = 0
-        pending_seconds = max(0, int(pending_action_until - time.time()))
-        current_action = pending_action
     try:
-        applications, unavailable_applications = get_open_applications()
+        ag = ag_ozetini_topla()
+        ag_hatasi = None
+    except (OSError, psutil.Error, RuntimeError):
+        logger.exception("Ağ trafiği bilgileri okunamadı.")
+        ag = None
+        ag_hatasi = "Ağ trafiği bilgisi alınamadı; client.log dosyasını inceleyin."
+    try:
+        en_cok_kullanan_surecler, okunamayan_surec = (
+            kaynak_tuketimindeki_surecleri_getir(memory_stats.total)
+        )
+        surec_hatasi = None
+    except (OSError, psutil.Error):
+        logger.exception("Kaynak tüketen süreçler okunamadı.")
+        en_cok_kullanan_surecler, okunamayan_surec = [], 0
+        surec_hatasi = "Süreç listesi alınamadı; client.log dosyasını inceleyin."
+
+    with ISLEM_KILIDI:
+        if bekleyen_guc_islemi and time.time() >= bekleyen_islem_bitis_zamani:
+            bekleyen_guc_islemi = None
+            bekleyen_islem_bitis_zamani = 0
+        pending_seconds = max(0, int(bekleyen_islem_bitis_zamani - time.time()))
+        current_action = bekleyen_guc_islemi
+    try:
+        applications, unavailable_applications = acik_uygulamalari_topla()
         applications_error = None
     except (OSError, psutil.Error, RuntimeError):
-        logger.exception("Could not read open Windows applications.")
+        logger.exception("Açık Windows uygulamaları okunamadı.")
         applications, unavailable_applications = [], 0
         applications_error = "Uygulama listesi alınamadı; hata client.log dosyasına kaydedildi."
 
+    history_error = gecmisi_kaydet(cpu, memory, disk.percent)
     return {
-        "hostname": socket.gethostname(),
-        "username": os.environ.get("USERNAME", "Windows kullanıcısı"),
+        "bilgisayar_adi": socket.gethostname(),
+        "kullanici_adi": os.environ.get("USERNAME", "Windows kullanıcısı"),
         "cpu": cpu,
-        "cpu_model": platform.processor() or platform.machine() or "Windows işlemci",
-        "cpu_cores": psutil.cpu_count(logical=False) or psutil.cpu_count() or 1,
-        "cpu_threads": psutil.cpu_count(logical=True) or 1,
-        "os_name": f"{platform.system()} {platform.release()}",
-        "ram": memory,
-        "cpu_frequency_mhz": (
+        "cpu_modeli": platform.processor() or platform.machine() or "Windows işlemci",
+        "cpu_cekirdek": psutil.cpu_count(logical=False) or psutil.cpu_count() or 1,
+        "cpu_izlek": psutil.cpu_count(logical=True) or 1,
+        "isletim_sistemi": f"{platform.system()} {platform.release()}",
+        "bellek_yuzde": memory,
+        "cpu_frekans_mhz": (
             round(cpu_frequency.current) if cpu_frequency is not None else None
         ),
-        "ram_used_gb": round(memory_stats.used / (1024 ** 3), 1),
-        "ram_total_gb": round(memory_stats.total / (1024 ** 3), 1),
-        "ram_available_gb": round(memory_stats.available / (1024 ** 3), 1),
-        "disk_used": round(disk.percent),
-        "disk_free_gb": round(disk.free / (1024 ** 3), 1),
-        "disk_total_gb": round(disk.total / (1024 ** 3), 1),
-        "uptime_seconds": uptime_seconds,
-        "boot_time": datetime.fromtimestamp(boot_timestamp).astimezone().strftime(
+        "bellek_kullanilan_gb": round(memory_stats.used / (1024 ** 3), 1),
+        "bellek_toplam_gb": round(memory_stats.total / (1024 ** 3), 1),
+        "bellek_kullanilabilir_gb": round(memory_stats.available / (1024 ** 3), 1),
+        "disk_kullanilan_yuzde": round(disk.percent),
+        "disk_bos_gb": round(disk.free / (1024 ** 3), 1),
+        "disk_toplam_gb": round(disk.total / (1024 ** 3), 1),
+        "calisma_suresi_saniye": uptime_seconds,
+        "baslangic_zamani": datetime.fromtimestamp(boot_timestamp).astimezone().strftime(
             "%d.%m.%Y %H:%M"
         ),
-        "battery": (
+        "pil_durumu": (
             f"{battery.percent}%"
             + (" · şarj oluyor" if battery.power_plugged else " · pilde")
             if battery is not None
             else "Masaüstü / pil bilgisi yok"
         ),
-        "applications": applications,
-        "unavailable_applications": unavailable_applications,
-        "applications_error": applications_error,
-        "pending_action": current_action,
-        "pending_seconds": pending_seconds,
+        "acik_uygulamalar": applications,
+        "okunamayan_uygulama_sayisi": unavailable_applications,
+        "uygulama_hatasi": applications_error,
+        "en_cok_kullanan_surecler": en_cok_kullanan_surecler,
+        "okunamayan_surec_sayisi": okunamayan_surec,
+        "surec_hatasi": surec_hatasi,
+        "ag": ag,
+        "ag_hatasi": ag_hatasi,
+        "gecmis_hatasi": history_error,
+        "bekleyen_islem": current_action,
+        "bekleyen_islem_saniye": pending_seconds,
     }
 
 
-def format_duration(seconds):
+def sureyi_bicimlendir(seconds):
     total_minutes = max(0, int(seconds)) // 60
     days, remaining_hours = divmod(total_minutes, 24 * 60)
     hours, minutes = divmod(remaining_hours, 60)
@@ -185,7 +377,7 @@ def format_duration(seconds):
     return " ".join(parts)
 
 
-def capture_screenshot():
+def ekran_goruntusu_al():
     screenshot = ImageGrab.grab(all_screens=True)
     screenshot.thumbnail((1600, 1200), Image.Resampling.LANCZOS)
     converted = screenshot.convert("RGB")
@@ -209,25 +401,25 @@ def capture_screenshot():
     return output
 
 
-def run_power_action(action):
-    global pending_action, pending_action_until
+def guc_islemi_yurut(islem):
+    global bekleyen_guc_islemi, bekleyen_islem_bitis_zamani
     shutdown_exe = Path(os.environ["SystemRoot"]) / "System32" / "shutdown.exe"
     if not shutdown_exe.is_file():
         raise OSError("Windows shutdown.exe bulunamadı.")
 
-    with ACTION_LOCK:
-        if action in ("restart", "shutdown"):
-            if pending_action:
+    with ISLEM_KILIDI:
+        if islem in ("restart", "shutdown"):
+            if bekleyen_guc_islemi:
                 raise ValueError("Zaten planlanmış bir güç işlemi var; önce iptal et.")
-            command = [str(shutdown_exe), "/r" if action == "restart" else "/s", "/t", "60",
-                       "/c", "Scheduled from the authorized Discord control panel"]
+            command = [str(shutdown_exe), "/r" if islem == "restart" else "/s", "/t", "60",
+                       "/c", "Yetkili Discord kontrol panelinden planlandı"]
             message = (
                 "Yeniden başlatma 60 saniye sonrasına planlandı."
-                if action == "restart"
+                if islem == "restart"
                 else "Bilgisayarın kapanması 60 saniye sonrasına planlandı."
             )
-        elif action == "cancel":
-            if not pending_action:
+        elif islem == "cancel":
+            if not bekleyen_guc_islemi:
                 raise ValueError("İptal edilecek planlanmış bir işlem yok.")
             command = [str(shutdown_exe), "/a"]
             message = "Planlanan güç işlemi iptal edildi."
@@ -245,16 +437,16 @@ def run_power_action(action):
         if result.returncode:
             detail = (result.stderr or result.stdout).strip()
             raise OSError(detail or f"shutdown.exe {result.returncode} koduyla başarısız oldu.")
-        if action == "cancel":
-            pending_action = None
-            pending_action_until = 0
+        if islem == "cancel":
+            bekleyen_guc_islemi = None
+            bekleyen_islem_bitis_zamani = 0
         else:
-            pending_action = action
-            pending_action_until = time.time() + 60
+            bekleyen_guc_islemi = islem
+            bekleyen_islem_bitis_zamani = time.time() + 60
         return message
 
 
-def tray_image():
+def tepsi_gorselini_olustur():
     image = Image.new("RGBA", (64, 64), (14, 24, 40, 255))
     draw = ImageDraw.Draw(image)
     draw.rounded_rectangle((10, 10, 54, 54), radius=12, fill=(66, 133, 244, 255))
@@ -264,20 +456,20 @@ def tray_image():
     return image
 
 
-def quit_application(icon, item):
-    logger.info("%s selected from the tray menu.", item.text)
-    shutdown_event.set()
+def uygulamadan_cik(icon, item):
+    logger.info("Tepsi menüsünden seçildi: %s", item.text)
+    kapatma_olayi.set()
     icon.stop()
     try:
-        from discord_control import stop_bot
+        from discord_control import botu_durdur
 
-        stop_bot()
+        botu_durdur()
     except ImportError:
-        logger.exception("Could not import Discord bot shutdown handler.")
+        logger.exception("Discord botunu durdurma işlevi içe aktarılamadı.")
 
 
-def disable_startup_and_quit(icon, item):
-    logger.info("%s selected from the tray menu.", item.text)
+def baslangici_kapat_ve_cik(icon, item):
+    logger.info("Tepsi menüsünden seçildi: %s", item.text)
     shortcut = (
         Path(os.environ["APPDATA"])
         / "Microsoft"
@@ -322,45 +514,45 @@ def disable_startup_and_quit(icon, item):
             detail = result.stderr.strip() or result.stdout.strip()
             raise OSError(detail or "Başlangıç görevi kaldırılamadı.")
     except OSError:
-        logger.exception("Could not disable automatic startup.")
+        logger.exception("Otomatik başlangıç devre dışı bırakılamadı.")
         return
-    quit_application(icon, item)
+    uygulamadan_cik(icon, item)
 
 
-def start_tray():
+def tepsi_menusunu_baslat():
     try:
         icon = pystray.Icon(
             "PCSelfControl",
-            tray_image(),
+            tepsi_gorselini_olustur(),
             "Discord PC Kontrolü",
             pystray.Menu(
-                pystray.MenuItem("Oturum sonuna kadar kapat", quit_application),
-                pystray.MenuItem("Başlangıcı kapat ve çık", disable_startup_and_quit),
+                pystray.MenuItem("Oturum sonuna kadar kapat", uygulamadan_cik),
+                pystray.MenuItem("Başlangıcı kapat ve çık", baslangici_kapat_ve_cik),
             ),
         )
         icon.run()
     except Exception:
-        logger.exception("Could not show the system tray controls.")
+        logger.exception("Sistem tepsisi denetimleri gösterilemedi.")
 
 
-def main():
-    instance_lock = acquire_instance_lock()
+def ana():
+    instance_lock = tekil_ornek_kilidi_al()
     if instance_lock is None:
-        logger.info("Another PC control client instance is already running.")
+        logger.info("PC kontrol istemcisinin başka bir örneği zaten çalışıyor.")
         return
 
-    threading.Thread(target=start_tray, daemon=True).start()
-    from discord_control import run_bot
+    threading.Thread(target=tepsi_menusunu_baslat, daemon=True).start()
+    from discord_control import botu_calistir
 
-    threading.Thread(target=run_bot, name="discord-control-bot", daemon=True).start()
+    threading.Thread(target=botu_calistir, name="discord-kontrol-botu", daemon=True).start()
     try:
-        shutdown_event.wait()
+        kapatma_olayi.wait()
     finally:
-        from discord_control import clear_ready
+        from discord_control import hazirlik_durumunu_temizle
 
-        clear_ready()
+        hazirlik_durumunu_temizle()
         instance_lock.close()
 
 
 if __name__ == "__main__":
-    main()
+    ana()

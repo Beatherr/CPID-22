@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $launcher = [System.IO.Path]::GetFullPath($LauncherPath)
 if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
-    throw "Launcher not found: $launcher"
+    throw "Başlatıcı bulunamadı: $launcher"
 }
 
 $startupTask = Get-ScheduledTask -TaskName 'PCActivityMonitor' -ErrorAction SilentlyContinue
@@ -77,11 +77,11 @@ $shortcut.WindowStyle = 7
 $shortcut.Save()
 
 if (-not (Test-Path -LiteralPath $shortcutPath -PathType Leaf)) {
-    throw "Could not create the Startup shortcut: $shortcutPath"
+    throw "Başlangıç kısayolu oluşturulamadı: $shortcutPath"
 }
 
 if ($registeredTask.State -eq 'Disabled') {
-    throw 'The PCActivityMonitor startup task is disabled.'
+    throw 'PCActivityMonitor başlangıç görevi devre dışı.'
 }
 
-Write-Output "Registered PCActivityMonitor in the Startup folder and as a sign-in task for $identity."
+Write-Output "PCActivityMonitor, $identity kullanıcısı için Başlangıç klasörüne ve oturum açma görevine kaydedildi."

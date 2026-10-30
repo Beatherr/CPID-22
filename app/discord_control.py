@@ -12,46 +12,46 @@ from discord import app_commands
 import client as pc
 
 
-APP_NAME = "PCActivityMonitor"
-STATE_DIR = Path(os.environ["APPDATA"]) / APP_NAME
-CONFIG_FILE = STATE_DIR / "config.json"
-PANEL_FILE = STATE_DIR / "discord_panel.json"
-READY_FILE = STATE_DIR / "discord_ready.json"
-LOG_FILE = STATE_DIR / "discord.log"
+UYGULAMA_ADI = "PCActivityMonitor"
+DURUM_DIZINI = Path(os.environ["APPDATA"]) / UYGULAMA_ADI
+AYAR_DOSYASI = DURUM_DIZINI / "config.json"
+PANEL_DOSYASI = DURUM_DIZINI / "discord_panel.json"
+HAZIRLIK_DOSYASI = DURUM_DIZINI / "discord_ready.json"
+GUNLUK_DOSYASI = DURUM_DIZINI / "discord.log"
 logger = logging.getLogger("pc_discord_control")
 logger.setLevel(logging.INFO)
 logger.addHandler(
-    RotatingFileHandler(LOG_FILE, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    RotatingFileHandler(GUNLUK_DOSYASI, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
 )
 
-with CONFIG_FILE.open("r", encoding="utf-8") as config_file:
-    config = json.load(config_file)
+with AYAR_DOSYASI.open("r", encoding="utf-8") as ayar_dosyasi:
+    ayarlar = json.load(ayar_dosyasi)
 
-BOT_TOKEN = config.get("BOT_TOKEN")
-ALLOWED_USER_ID = int(config.get("ALLOWED_USER_ID", 0))
-GUILD_ID = int(config.get("GUILD_ID", 0))
-CHANNEL_ID = int(config.get("CHANNEL_ID", 0))
-bot_loop = None
-bot_client = None
-startup_error = None
+bot_anahtari = ayarlar.get("BOT_TOKEN")
+yetkili_kullanici_kimligi = int(ayarlar.get("ALLOWED_USER_ID", 0))
+sunucu_kimligi = int(ayarlar.get("GUILD_ID", 0))
+kontrol_kanali_kimligi = int(ayarlar.get("CHANNEL_ID", 0))
+bot_olay_dongusu = None
+discord_istemcisi = None
+baslangic_hatasi = None
 
 
-def allowed(interaction: discord.Interaction) -> bool:
+def kullanima_yetkili_mi(interaction: discord.Interaction) -> bool:
     return (
-        interaction.user.id == ALLOWED_USER_ID
-        and interaction.guild_id == GUILD_ID
-        and interaction.channel_id == CHANNEL_ID
+        interaction.user.id == yetkili_kullanici_kimligi
+        and interaction.guild_id == sunucu_kimligi
+        and interaction.channel_id == kontrol_kanali_kimligi
     )
 
 
-def make_status_embed(status=None):
-    status = status or pc.collect_status()
+def durum_gomulusu_olustur(status=None):
+    status = status or pc.durum_topla()
     now = datetime.now().astimezone()
-    pending = status["pending_action"]
+    pending = status["bekleyen_islem"]
     if pending == "restart":
-        power_state = f"Yeniden başlatma planlandı · {status['pending_seconds']} sn kaldı"
+        power_state = f"Yeniden başlatma planlandı · {status['bekleyen_islem_saniye']} sn kaldı"
     elif pending == "shutdown":
-        power_state = f"Kapatma planlandı · {status['pending_seconds']} sn kaldı"
+        power_state = f"Kapatma planlandı · {status['bekleyen_islem_saniye']} sn kaldı"
     else:
         power_state = "Planlanmış işlem yok"
 
@@ -67,8 +67,8 @@ def make_status_embed(status=None):
     embed.add_field(
         name="💻 Bilgisayar",
         value=(
-            f"**Ad:** `{status['hostname']}`\n"
-            f"**Windows hesabı:** `{status['username']}`\n"
+            f"**Ad:** `{status['bilgisayar_adi']}`\n"
+            f"**Windows hesabı:** `{status['kullanici_adi']}`\n"
             f"**Durum:** 🟢 Çevrimiçi"
         ),
         inline=True,
@@ -77,58 +77,100 @@ def make_status_embed(status=None):
         name="⚙️ İşlemci",
         value=(
             f"**Kullanım:** {status['cpu']}%\n"
-            f"**Model:** {status['cpu_model']}\n"
-            f"**Çekirdek / izlek:** {status['cpu_cores']} / {status['cpu_threads']}\n"
-            f"**Anlık frekans:** {status['cpu_frequency_mhz'] or 'N/A'} MHz"
+            f"**Model:** {status['cpu_modeli']}\n"
+            f"**Çekirdek / izlek:** {status['cpu_cekirdek']} / {status['cpu_izlek']}\n"
+            f"**Anlık frekans:** {status['cpu_frekans_mhz'] or 'Yok'} MHz"
         ),
         inline=True,
     )
     embed.add_field(
         name="🧠 Bellek",
         value=(
-            f"**Kullanım:** {status['ram']}% "
-            f"({status['ram_used_gb']} / {status['ram_total_gb']} GB)\n"
-            f"**Kullanılabilir:** {status['ram_available_gb']} GB"
+            f"**Kullanım:** {status['bellek_yuzde']}% "
+            f"({status['bellek_kullanilan_gb']} / {status['bellek_toplam_gb']} GB)\n"
+            f"**Kullanılabilir:** {status['bellek_kullanilabilir_gb']} GB"
         ),
         inline=True,
     )
     embed.add_field(
         name="💽 Sistem diski",
         value=(
-            f"**Kullanım:** {status['disk_used']}%\n"
-            f"**Boş alan:** {status['disk_free_gb']} / {status['disk_total_gb']} GB"
+            f"**Kullanım:** {status['disk_kullanilan_yuzde']}%\n"
+            f"**Boş alan:** {status['disk_bos_gb']} / {status['disk_toplam_gb']} GB"
         ),
         inline=True,
     )
     embed.add_field(
         name="⏱️ Sistem",
         value=(
-            f"**Çalışma süresi:** {pc.format_duration(status['uptime_seconds'])}\n"
-            f"**Son açılış:** {status['boot_time']}\n"
-            f"**İşletim sistemi:** {status['os_name']}"
+            f"**Çalışma süresi:** {pc.sureyi_bicimlendir(status['calisma_suresi_saniye'])}\n"
+            f"**Son açılış:** {status['baslangic_zamani']}\n"
+            f"**İşletim sistemi:** {status['isletim_sistemi']}"
         ),
         inline=True,
     )
     embed.add_field(
         name="🔋 Pil",
-        value=status["battery"],
+        value=status["pil_durumu"],
         inline=True,
     )
-    applications = status["applications"]
+    ag = status["ag"]
+    if ag is None:
+        ag_metni = status["ag_hatasi"] or "Ağ bilgisi kullanılamıyor."
+    else:
+        gonderim = (
+            "hesaplanıyor"
+            if ag["gonderim_hizi"] is None
+            else f"{pc.boyutu_bicimlendir(ag['gonderim_hizi'])}/sn"
+        )
+        alim = (
+            "hesaplanıyor"
+            if ag["alim_hizi"] is None
+            else f"{pc.boyutu_bicimlendir(ag['alim_hizi'])}/sn"
+        )
+        ag_metni = (
+            f"**Bağlı ağ arayüzü:** {ag['etkin_arayuz_sayisi']}\n"
+            f"**Anlık:** ↑ {gonderim} · ↓ {alim}\n"
+            f"**Windows açılışından beri:** ↑ {pc.boyutu_bicimlendir(ag['gonderilen_bayt'])} "
+            f"· ↓ {pc.boyutu_bicimlendir(ag['alinan_bayt'])}"
+        )
+    embed.add_field(name="🌐 Ağ trafiği", value=ag_metni, inline=True)
+
+    surecler = status["en_cok_kullanan_surecler"]
+    if status["surec_hatasi"]:
+        surec_metni = status["surec_hatasi"]
+    elif surecler:
+        surec_metni = "\n".join(
+            f"• `{surec['ad'][:32]}` — {surec['bellek_mb']} MB RAM "
+            f"({surec['bellek_yuzde']}%) · {surec['cpu']}% CPU"
+            for surec in surecler
+        )
+        if status["okunamayan_surec_sayisi"]:
+            surec_metni += (
+                f"\n{status['okunamayan_surec_sayisi']} süreç için erişim izni yok."
+            )
+    else:
+        surec_metni = "Kaynak kullanan süreç bulunamadı."
+    embed.add_field(
+        name="📊 En çok kaynak kullanan süreçler",
+        value=surec_metni,
+        inline=False,
+    )
+    applications = status["acik_uygulamalar"]
     application_lines = applications[:12]
     if len(applications) > len(application_lines):
         application_lines.append(f"+{len(applications) - len(application_lines)} uygulama daha")
-    if status["unavailable_applications"]:
+    if status["okunamayan_uygulama_sayisi"]:
         application_lines.append(
-            f"{status['unavailable_applications']} uygulamanın adı okunamadı"
+            f"{status['okunamayan_uygulama_sayisi']} uygulamanın adı okunamadı"
         )
-    if status["applications_error"]:
-        application_lines = [status["applications_error"]]
+    if status["uygulama_hatasi"]:
+        application_lines = [status["uygulama_hatasi"]]
     embed.add_field(
         name=f"🪟 Açık uygulamalar ({len(applications)})",
         value="\n".join(
             application_lines
-            if status["applications_error"]
+            if status["uygulama_hatasi"]
             else [f"• `{name[:48]}`" for name in application_lines]
         )
         if application_lines
@@ -136,6 +178,12 @@ def make_status_embed(status=None):
         inline=False,
     )
     embed.add_field(name="🔌 Güç işlemi", value=power_state, inline=False)
+    if status["gecmis_hatasi"]:
+        embed.add_field(
+            name="📈 Geçmiş kaydı",
+            value=status["gecmis_hatasi"],
+            inline=False,
+        )
     embed.set_footer(
         text=(
             f"PC Kontrol • Son güncelleme: {now.strftime('%d.%m.%Y %H:%M:%S')} "
@@ -145,7 +193,7 @@ def make_status_embed(status=None):
     return embed
 
 
-def make_error_embed(title, message):
+def hata_gomulusu_olustur(title, message):
     return discord.Embed(
         title=title,
         description=message,
@@ -154,21 +202,21 @@ def make_error_embed(title, message):
     )
 
 
-class ControlPanelView(discord.ui.View):
+class KontrolPaneliGorunumu(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if allowed(interaction):
+        if kullanima_yetkili_mi(interaction):
             return True
         logger.warning(
-            "Rejected control-panel interaction from user %s in guild %s channel %s.",
+            "%s kullanıcısının %s sunucusu ve %s kanalındaki panel isteği reddedildi.",
             interaction.user.id,
             interaction.guild_id,
             interaction.channel_id,
         )
         await interaction.response.send_message(
-            embed=make_error_embed(
+            embed=hata_gomulusu_olustur(
                 "Yetkisiz erişim",
                 "Bu bilgisayar kontrol panelini kullanma iznin yok.",
             ),
@@ -184,18 +232,18 @@ class ControlPanelView(discord.ui.View):
         custom_id="pc:refresh",
         row=0,
     )
-    async def refresh_status(
+    async def durumu_yenile(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button,
     ) -> None:
         _ = button
         try:
-            embed = await asyncio.to_thread(make_status_embed)
+            embed = await asyncio.to_thread(durum_gomulusu_olustur)
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
-            logger.exception("Could not refresh the PC control embed.")
+            logger.exception("Discord kontrol paneli yenilenemedi.")
             await interaction.response.send_message(
-                embed=make_error_embed("Durum alınamadı", str(exc)),
+                embed=hata_gomulusu_olustur("Durum alınamadı", str(exc)),
                 ephemeral=True,
             )
             return
@@ -208,7 +256,7 @@ class ControlPanelView(discord.ui.View):
         custom_id="pc:screenshot",
         row=0,
     )
-    async def screenshot(
+    async def ekran_goruntusu_gonder(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button,
@@ -216,11 +264,11 @@ class ControlPanelView(discord.ui.View):
         _ = button
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
-            image = await asyncio.to_thread(pc.capture_screenshot)
+            image = await asyncio.to_thread(pc.ekran_goruntusu_al)
         except (OSError, RuntimeError, ValueError) as exc:
-            logger.exception("Could not capture screen for the Discord control panel.")
+            logger.exception("Discord kontrol paneli için ekran görüntüsü alınamadı.")
             await interaction.followup.send(
-                embed=make_error_embed("Ekran görüntüsü alınamadı", str(exc)),
+                embed=hata_gomulusu_olustur("Ekran görüntüsü alınamadı", str(exc)),
                 ephemeral=True,
             )
             return
@@ -246,7 +294,7 @@ class ControlPanelView(discord.ui.View):
         custom_id="pc:restart",
         row=0,
     )
-    async def request_restart(
+    async def yeniden_baslatma_iste(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button,
@@ -262,7 +310,7 @@ class ControlPanelView(discord.ui.View):
                 ),
                 color=discord.Color.orange(),
             ),
-            view=PowerConfirmationView("restart"),
+            view=GucOnayGorunumu("restart"),
             ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
         )
@@ -274,7 +322,7 @@ class ControlPanelView(discord.ui.View):
         custom_id="pc:shutdown",
         row=0,
     )
-    async def request_shutdown(
+    async def bilgisayari_kapatma_iste(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button,
@@ -289,7 +337,35 @@ class ControlPanelView(discord.ui.View):
                 ),
                 color=discord.Color.red(),
             ),
-            view=PowerConfirmationView("shutdown"),
+            view=GucOnayGorunumu("shutdown"),
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    @discord.ui.button(
+        label="Kaynak geçmişi",
+        emoji="📈",
+        style=discord.ButtonStyle.secondary,
+        custom_id="pc:history",
+        row=1,
+    )
+    async def kaynak_gecmisi(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ) -> None:
+        _ = button
+        await interaction.response.send_message(
+            embed=discord.Embed(
+                title="📈 Kaynak kullanım geçmişi",
+                description=(
+                    "CPU, bellek ve disk ölçümleri bu bilgisayarda yerel olarak "
+                    "7 güne kadar tutulur. Bir aralık seçtiğinde grafik Discord'a "
+                    "yalnızca sana özel yanıt olarak gönderilir."
+                ),
+                color=discord.Color.blurple(),
+            ),
+            view=GecmisAraligiGorunumu(),
             ephemeral=True,
             allowed_mentions=discord.AllowedMentions.none(),
         )
@@ -301,7 +377,7 @@ class ControlPanelView(discord.ui.View):
         custom_id="pc:cancel",
         row=1,
     )
-    async def cancel_power_action(
+    async def guc_islemini_iptal_et(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button,
@@ -309,11 +385,11 @@ class ControlPanelView(discord.ui.View):
         _ = button
         await interaction.response.defer()
         try:
-            message = await asyncio.to_thread(pc.run_power_action, "cancel")
-            embed = await asyncio.to_thread(make_status_embed)
+            message = await asyncio.to_thread(pc.guc_islemi_yurut, "cancel")
+            embed = await asyncio.to_thread(durum_gomulusu_olustur)
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             await interaction.followup.send(
-                embed=make_error_embed("İşlem iptal edilemedi", str(exc)),
+                embed=hata_gomulusu_olustur("İşlem iptal edilemedi", str(exc)),
                 ephemeral=True,
             )
             return
@@ -334,7 +410,7 @@ class ControlPanelView(discord.ui.View):
         custom_id="pc:help",
         row=1,
     )
-    async def show_help(
+    async def yardim_ve_gizliligi_goster(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button,
@@ -353,6 +429,9 @@ class ControlPanelView(discord.ui.View):
             value=(
                 "🔄 **Durumu yenile:** CPU, bellek, disk ve sistem bilgilerini yeniler.\n"
                 "🪟 **Açık uygulamalar:** Görünür pencere sahibi uygulamaların adlarını gösterir; pencere başlıklarını paylaşmaz.\n"
+                "📊 **Kaynak süreçleri:** En çok bellek kullanan beş sürecin adı, RAM ve CPU kullanımını gösterir.\n"
+                "🌐 **Ağ trafiği:** Windows açılışından beri gönderilen/alınan toplamı ve yaklaşık anlık hızı gösterir.\n"
+                "📈 **Kaynak geçmişi:** CPU, bellek ve disk grafiğini 1 saat, 24 saat veya 7 gün için gönderir.\n"
                 "🖼️ **Ekran görüntüsü:** Yalnızca istediğinde anlık görüntüyü sana özel yollar.\n"
                 "🔁 **Yeniden başlat / 🔴 Kapat:** İkinci onay ister; 60 sn gecikmeli çalışır.\n"
                 "🛑 **İşlemi iptal et:** Bekleyen güç işlemini durdurur."
@@ -363,8 +442,10 @@ class ControlPanelView(discord.ui.View):
             name="Yetki ve veri",
             value=(
                 "İşlemler sadece kurulumda seçilen kullanıcı, sunucu ve kanalda kabul edilir. "
-                "Açık uygulamaların adları ve isteğe bağlı ekran görüntüsü Discord üzerinden "
-                "iletilir; pencere başlıkları alınmaz. Bot token'ını paylaşma; bu kanalı özel tut."
+                "Açık uygulama ve en çok kaynak kullanan süreç adları, sistem durumu ve ağ "
+                "sayacı özeti kontrol kanalına gönderilir. Geçmiş bilgisayarda 7 gün tutulur; "
+                "grafik yalnızca istediğinde sana özel gönderilir. Pencere başlıkları alınmaz. "
+                "Bot token'ını paylaşma; bu kanalı özel tut."
             ),
             inline=False,
         )
@@ -384,7 +465,71 @@ class ControlPanelView(discord.ui.View):
         )
 
 
-class PowerConfirmationView(discord.ui.View):
+class GecmisAraligiGorunumu(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=120)
+
+    async def grafiki_gonder(self, interaction, saat):
+        if not kullanima_yetkili_mi(interaction):
+            await interaction.response.send_message(
+                embed=hata_gomulusu_olustur("Yetkisiz erişim", "Bu işlem için iznin yok."),
+                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            grafik = await asyncio.to_thread(pc.gecmis_grafigi_olustur, saat)
+        except (OSError, RuntimeError, ValueError) as exc:
+            logger.exception("Kaynak kullanım grafiği oluşturulamadı.")
+            await interaction.followup.send(
+                embed=hata_gomulusu_olustur("Grafik oluşturulamadı", str(exc)),
+                ephemeral=True,
+            )
+            return
+        embed = discord.Embed(
+            title=f"📈 Son {saat} saat • Kaynak kullanımı",
+            description="Ölçümler yerel geçmiş veritabanından oluşturuldu.",
+            color=discord.Color.blurple(),
+            timestamp=datetime.now().astimezone(),
+        )
+        embed.set_image(url="attachment://kaynak-gecmisi.png")
+        await interaction.followup.send(
+            embed=embed,
+            file=discord.File(grafik, filename="kaynak-gecmisi.png"),
+            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    @discord.ui.button(
+        label="1 saat",
+        style=discord.ButtonStyle.primary,
+        custom_id="pc:history:1h",
+    )
+    async def bir_saat(self, interaction, button):
+        _ = button
+        await self.grafiki_gonder(interaction, 1)
+
+    @discord.ui.button(
+        label="24 saat",
+        style=discord.ButtonStyle.primary,
+        custom_id="pc:history:24h",
+    )
+    async def yirmi_dort_saat(self, interaction, button):
+        _ = button
+        await self.grafiki_gonder(interaction, 24)
+
+    @discord.ui.button(
+        label="7 gün",
+        style=discord.ButtonStyle.primary,
+        custom_id="pc:history:7d",
+    )
+    async def yedi_gun(self, interaction, button):
+        _ = button
+        await self.grafiki_gonder(interaction, 168)
+
+
+class GucOnayGorunumu(discord.ui.View):
     def __init__(self, action: str):
         super().__init__(timeout=60)
         self.action = action
@@ -394,26 +539,26 @@ class PowerConfirmationView(discord.ui.View):
         style=discord.ButtonStyle.danger,
         custom_id="pc:confirm-power",
     )
-    async def confirm(
+    async def onayla(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button,
     ) -> None:
         _ = button
-        if not allowed(interaction):
+        if not kullanima_yetkili_mi(interaction):
             await interaction.response.send_message(
-                embed=make_error_embed("Yetkisiz erişim", "Bu işlem için iznin yok."),
+                embed=hata_gomulusu_olustur("Yetkisiz erişim", "Bu işlem için iznin yok."),
                 ephemeral=True,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
             return
         await interaction.response.defer()
         try:
-            result = await asyncio.to_thread(pc.run_power_action, self.action)
-            status_embed = await asyncio.to_thread(make_status_embed)
+            result = await asyncio.to_thread(pc.guc_islemi_yurut, self.action)
+            status_embed = await asyncio.to_thread(durum_gomulusu_olustur)
         except (OSError, RuntimeError, ValueError, KeyError) as exc:
             await interaction.edit_original_response(
-                embed=make_error_embed("İşlem başlatılamadı", str(exc)),
+                embed=hata_gomulusu_olustur("İşlem başlatılamadı", str(exc)),
                 view=None,
             )
             return
@@ -425,26 +570,26 @@ class PowerConfirmationView(discord.ui.View):
             ),
             view=None,
         )
-        if bot_client is not None:
+        if discord_istemcisi is not None:
             try:
-                await bot_client.update_control_panel(status_embed)
+                await discord_istemcisi.kontrol_panelini_guncelle(status_embed)
             except (discord.DiscordException, OSError):
-                logger.exception("Could not update panel after scheduling power action.")
+                logger.exception("Güç işlemi planlandıktan sonra panel güncellenemedi.")
 
     @discord.ui.button(
         label="Vazgeç",
         style=discord.ButtonStyle.secondary,
         custom_id="pc:cancel-confirmation",
     )
-    async def cancel(
+    async def vazgec(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button,
     ) -> None:
         _ = button
-        if not allowed(interaction):
+        if not kullanima_yetkili_mi(interaction):
             await interaction.response.send_message(
-                embed=make_error_embed("Yetkisiz erişim", "Bu işlem için iznin yok."),
+                embed=hata_gomulusu_olustur("Yetkisiz erişim", "Bu işlem için iznin yok."),
                 ephemeral=True,
                 allowed_mentions=discord.AllowedMentions.none(),
             )
@@ -459,7 +604,7 @@ class PowerConfirmationView(discord.ui.View):
         )
 
 
-class PCControlClient(discord.Client):
+class DiscordKontrolIstemcisi(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.default())
         self.tree = app_commands.CommandTree(self)
@@ -467,145 +612,149 @@ class PCControlClient(discord.Client):
         self.panel_task: asyncio.Task | None = None
 
     async def setup_hook(self) -> None:
-        self.add_view(ControlPanelView())
-        self.tree.clear_commands(guild=discord.Object(id=GUILD_ID))
-        await self.tree.sync(guild=discord.Object(id=GUILD_ID))
+        self.add_view(KontrolPaneliGorunumu())
+        self.tree.clear_commands(guild=discord.Object(id=sunucu_kimligi))
+        await self.tree.sync(guild=discord.Object(id=sunucu_kimligi))
 
     async def on_ready(self) -> None:
-        logger.info("Discord control bot is ready as %s.", self.user)
+        logger.info("Discord kontrol botu hazır: %s", self.user)
         try:
-            await self.ensure_control_panel()
-            publish_ready()
+            await self.kontrol_panelini_hazirla()
+            hazirlik_durumunu_yaz()
         except (discord.DiscordException, OSError, RuntimeError, ValueError):
-            clear_ready()
+            hazirlik_durumunu_temizle()
             logger.exception(
-                "Could not initialize the Discord control panel. "
-                "Check channel ID and bot channel permissions."
+                "Discord kontrol paneli başlatılamadı. "
+                "Kanal kimliğini ve botun kanal izinlerini denetleyin."
             )
             return
         if self.panel_task is None or self.panel_task.done():
             self.panel_task = asyncio.create_task(
-                self.refresh_control_panel(),
+                self.kontrol_panelini_yenile(),
                 name="pc-control-embed-refresh",
             )
 
     async def on_disconnect(self) -> None:
-        clear_ready()
-        logger.warning("Discord control bot disconnected.")
+        hazirlik_durumunu_temizle()
+        logger.warning("Discord kontrol botunun bağlantısı kesildi.")
 
-    async def ensure_control_panel(self) -> None:
-        channel = self.get_channel(CHANNEL_ID)
+    async def kontrol_panelini_hazirla(self) -> None:
+        channel = self.get_channel(kontrol_kanali_kimligi)
         if channel is None:
-            channel = await self.fetch_channel(CHANNEL_ID)
-        if not isinstance(channel, discord.TextChannel) or channel.guild.id != GUILD_ID:
-            raise ValueError("The configured panel channel is not a text channel in the selected guild.")
+            channel = await self.fetch_channel(kontrol_kanali_kimligi)
+        if not isinstance(channel, discord.TextChannel) or channel.guild.id != sunucu_kimligi:
+            raise ValueError("Yapılandırılan kontrol kanalı seçilen sunucuda bir metin kanalı değil.")
 
         message_id = None
         try:
-            with PANEL_FILE.open("r", encoding="utf-8") as panel_file:
+            with PANEL_DOSYASI.open("r", encoding="utf-8") as panel_file:
                 message_id = json.load(panel_file).get("message_id")
         except FileNotFoundError:
             pass
         except (OSError, json.JSONDecodeError):
-            logger.exception("Could not read the saved Discord control-panel message ID.")
+            logger.exception("Kayıtlı Discord kontrol paneli mesaj kimliği okunamadı.")
 
         if message_id:
             try:
                 self.panel_message = await channel.fetch_message(int(message_id))
             except discord.NotFound:
-                logger.warning("Saved control-panel message was deleted; creating a new one.")
+                logger.warning("Kayıtlı kontrol paneli mesajı silinmiş; yenisi oluşturuluyor.")
             except discord.Forbidden as exc:
                 raise RuntimeError(
-                    "Bot needs View Channel, Read Message History, and Send Messages."
+                    "Botun Kanalı Görüntüle, Mesaj Geçmişini Oku ve Mesaj Gönder izinlerine ihtiyacı var."
                 ) from exc
 
-        embed = await asyncio.to_thread(make_status_embed)
+        embed = await asyncio.to_thread(durum_gomulusu_olustur)
         if self.panel_message is None:
             self.panel_message = await channel.send(
                 embed=embed,
-                view=ControlPanelView(),
+                view=KontrolPaneliGorunumu(),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
-            temp_path = PANEL_FILE.with_suffix(".json.tmp")
+            temp_path = PANEL_DOSYASI.with_suffix(".json.tmp")
             temp_path.write_text(
                 json.dumps({"message_id": self.panel_message.id}),
                 encoding="utf-8",
             )
-            os.replace(temp_path, PANEL_FILE)
-            logger.info("Created the persistent PC control embed in channel %s.", CHANNEL_ID)
+            os.replace(temp_path, PANEL_DOSYASI)
+            logger.info("Kalıcı PC kontrol Embed'i %s kanalında oluşturuldu.", kontrol_kanali_kimligi)
         else:
-            await self.panel_message.edit(embed=embed, view=ControlPanelView())
-            logger.info("Restored the persistent PC control embed in channel %s.", CHANNEL_ID)
+            await self.panel_message.edit(embed=embed, view=KontrolPaneliGorunumu())
+            logger.info("%s kanalındaki kalıcı PC kontrol Embed'i geri yüklendi.", kontrol_kanali_kimligi)
 
-    async def update_control_panel(self, embed=None) -> None:
+    async def kontrol_panelini_guncelle(self, embed=None) -> None:
         if self.panel_message is None:
-            await self.ensure_control_panel()
+            await self.kontrol_panelini_hazirla()
         if self.panel_message is None:
-            raise RuntimeError("The persistent Discord control panel is unavailable.")
+            raise RuntimeError("Kalıcı Discord kontrol paneli kullanılamıyor.")
         if embed is None:
-            embed = await asyncio.to_thread(make_status_embed)
-        await self.panel_message.edit(embed=embed, view=ControlPanelView())
+            embed = await asyncio.to_thread(durum_gomulusu_olustur)
+        await self.panel_message.edit(embed=embed, view=KontrolPaneliGorunumu())
 
-    async def refresh_control_panel(self) -> None:
+    async def kontrol_panelini_yenile(self) -> None:
         await self.wait_until_ready()
         while not self.is_closed():
             try:
-                await self.update_control_panel()
+                await self.kontrol_panelini_guncelle()
             except discord.NotFound:
                 self.panel_message = None
                 try:
-                    await self.ensure_control_panel()
+                    await self.kontrol_panelini_hazirla()
                 except (discord.DiscordException, OSError, RuntimeError, ValueError):
-                    clear_ready()
-                    logger.exception("Could not recreate deleted Discord control panel.")
+                    hazirlik_durumunu_temizle()
+                    logger.exception("Silinen Discord kontrol paneli yeniden oluşturulamadı.")
             except (discord.DiscordException, OSError, RuntimeError, ValueError):
-                logger.exception("Automatic Discord control-panel refresh failed.")
+                logger.exception("Discord kontrol paneli otomatik yenilenemedi.")
             await asyncio.sleep(60)
 
 
-def publish_ready() -> None:
-    temp_path = READY_FILE.with_suffix(".json.tmp")
+def hazirlik_durumunu_yaz() -> None:
+    temp_path = HAZIRLIK_DOSYASI.with_suffix(".json.tmp")
     try:
         temp_path.write_text(json.dumps({"pid": os.getpid()}), encoding="utf-8")
-        os.replace(temp_path, READY_FILE)
+        os.replace(temp_path, HAZIRLIK_DOSYASI)
     finally:
         temp_path.unlink(missing_ok=True)
 
 
-def clear_ready() -> None:
+def hazirlik_durumunu_temizle() -> None:
     try:
-        with READY_FILE.open("r", encoding="utf-8") as ready_file:
+        with HAZIRLIK_DOSYASI.open("r", encoding="utf-8") as ready_file:
             ready = json.load(ready_file)
         if ready.get("pid") == os.getpid():
-            READY_FILE.unlink(missing_ok=True)
+            HAZIRLIK_DOSYASI.unlink(missing_ok=True)
     except FileNotFoundError:
         pass
     except (OSError, json.JSONDecodeError, AttributeError):
-        logger.exception("Could not clear the Discord readiness marker.")
+        logger.exception("Discord hazır durumu işareti temizlenemedi.")
 
 
-async def start_bot() -> None:
-    global bot_loop, bot_client
-    bot_loop = asyncio.get_running_loop()
-    bot_client = PCControlClient()
-    await bot_client.start(BOT_TOKEN)
+async def botu_baslat() -> None:
+    global bot_olay_dongusu, discord_istemcisi
+    bot_olay_dongusu = asyncio.get_running_loop()
+    discord_istemcisi = DiscordKontrolIstemcisi()
+    await discord_istemcisi.start(bot_anahtari)
 
 
-def run_bot() -> None:
-    global startup_error
-    if not BOT_TOKEN or ALLOWED_USER_ID <= 0 or GUILD_ID <= 0 or CHANNEL_ID <= 0:
-        startup_error = "Discord bot token, user ID, guild ID, or channel ID is missing."
-        logger.error(startup_error)
+def botu_calistir() -> None:
+    global baslangic_hatasi
+    if not bot_anahtari or yetkili_kullanici_kimligi <= 0 or sunucu_kimligi <= 0 or kontrol_kanali_kimligi <= 0:
+        baslangic_hatasi = "Discord bot token'ı, kullanıcı, sunucu veya kanal kimliği eksik."
+        logger.error(baslangic_hatasi)
         return
     try:
-        asyncio.run(start_bot())
+        asyncio.run(botu_baslat())
     except (discord.DiscordException, OSError, RuntimeError) as exc:
-        startup_error = str(exc)
-        clear_ready()
-        logger.exception("Discord control bot stopped unexpectedly.")
+        baslangic_hatasi = str(exc)
+        hazirlik_durumunu_temizle()
+        logger.exception("Discord kontrol botu beklenmedik biçimde durdu.")
 
 
-def stop_bot() -> None:
-    if bot_client is None or bot_loop is None or bot_client.is_closed():
+def botu_durdur() -> None:
+    if (
+        discord_istemcisi is None
+        or bot_olay_dongusu is None
+        or discord_istemcisi.is_closed()
+    ):
         return
-    asyncio.run_coroutine_threadsafe(bot_client.close(), bot_loop)
+    asyncio.run_coroutine_threadsafe(discord_istemcisi.close(), bot_olay_dongusu)

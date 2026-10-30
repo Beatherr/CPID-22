@@ -4,17 +4,20 @@ Windows bilgisayarını kendi Discord sunucundaki tek bir kalıcı kontrol mesaj
 
 ## Discord kontrol Embed'i
 
-Bot açıldığında belirlediğin özel kanala tek bir kontrol Embed'i gönderir. PC adı/kullanıcısı, CPU modeli ve yükü, çekirdek/izlek, bellek, sistem diski, işletim sistemi, son açılış, çalışma süresi, pil durumu, görünür penceresi olan açık uygulamalar ve bekleyen güç işlemi Embed içinde gösterilir. Durum 60 saniyede bir güncellenir.
+Bot açıldığında belirlediğin özel kanala tek bir kontrol Embed'i gönderir. PC adı/kullanıcısı, CPU modeli ve yükü, çekirdek/izlek, bellek, sistem diski, işletim sistemi, son açılış, çalışma süresi, pil durumu, ağ trafiği, en çok kaynak kullanan süreçler, görünür penceresi olan açık uygulamalar ve bekleyen güç işlemi Embed içinde gösterilir. Durum 60 saniyede bir güncellenir.
 
 Açık uygulamalar bölümünde yalnızca görünür pencereye sahip uygulamaların adı gösterilir; pencere başlıkları, belge adları ve içerikleri okunmaz veya Discord'a gönderilmez. Uygulama adları durum Embed'iyle Discord'a gönderilir. Arka planda çalışan ya da sistem tepsisinde simge durumundaki uygulamalar görünmeyebilir.
 
 Embed altındaki düğmeler:
 
 - **Durumu yenile** — Durum Embed'ini anında günceller.
+- **Kaynak geçmişi** — CPU, bellek ve disk kullanımının 1 saat, 24 saat veya 7 günlük grafiğini sana özel olarak gönderir. Örnekler yerel bilgisayarda 7 güne kadar tutulur.
 - **Ekran görüntüsü** — O anın görüntüsünü yalnızca sana özel bir Embed eki olarak gönderir; otomatik kayıt yapılmaz.
 - **Yeniden başlat** / **Bilgisayarı kapat** — Önce özel bir Embed içinde onay ister; onaylarsan işlem 60 saniye sonrasına planlanır.
 - **İşlemi iptal et** — Planlanmış yeniden başlatma veya kapatmayı iptal eder.
 - **Yardım ve gizlilik** — Kontrolleri ve veri davranışını özel Embed içinde açıklar.
+
+Durum paneli en çok bellek kullanan beş sürecin adını, yaklaşık CPU/RAM kullanımını ve Windows açılışından beri toplam ağ gönderim/alım miktarını gösterir. Anlık ağ hızları ardışık ölçümlerden hesaplanır; ilk ölçümde hız henüz gösterilmeyebilir.
 
 Bot yeniden başlarsa aynı kontrol mesajını bulup günceller. Mesaj silinmişse yenisini oluşturur. Buton yanıtları ve ekran görüntüsü Discord'da yalnızca sana görünür (ephemeral). Ana durum Embed'i, kurulumda seçtiğin özel kanalda görünür; bu kanalı yalnızca senin ve botun görebildiğinden emin ol.
 
@@ -29,14 +32,14 @@ Bot yeniden başlarsa aynı kontrol mesajını bulup günceller. Mesaj silinmiş
 5. Sunucunda yalnızca senin ve botun görebildiği bir metin kanalı oluştur.
 6. Discord **User Settings → Advanced → Developer Mode** seçeneğini aç. Kendi kullanıcı ID'ni, sunucu ID'sini ve kontrol kanalının ID'sini **Copy ID** ile al.
 
-Bot token'ı Windows'ta ayrı, maskeli bir giriş penceresinde istenir; token'ı bu pencereye yapıştırabilirsin ve karakterleri görünmez. Uygulama adları Discord'a gönderildiği için güncel kurulum bu veri davranışını ayrıca onaylatır. Mesaj içeriği veya üye listesi gibi ayrıcalıklı Gateway intent'leri istenmez.
+Bot token'ı Windows'ta ayrı, maskeli bir giriş penceresinde istenir; token'ı bu pencereye yapıştırabilirsin ve karakterleri görünmez. Uygulama ve süreç adları ile ağ sayaçları Discord'a gönderildiği için güncel kurulum bu veri davranışını ayrıca onaylatır. Mesaj içeriği veya üye listesi gibi ayrıcalıklı Gateway intent'leri istenmez.
 
 ### 2. Windows uygulamasını kur
 
 1. `README.md`, `setup.bat` ve `app` klasörünü birlikte kalıcı bir klasöre çıkar; kurulumdan sonra klasörü taşıma.
-2. `setup.bat` çalıştır ve **1 — Install or reconfigure** seç. Önceden kurulum varsa kayıtlı token ve ID'lerle devam etme veya yeni ayar girme seçeneği sunulur.
+2. `setup.bat` çalıştır ve **1 — Kur veya yeniden yapılandır** seç. Önceden kurulum varsa kayıtlı token ve ID'lerle devam etme veya yeni ayar girme seçeneği sunulur.
 3. Kayıtlı ayarlarla devam edersen token ve kullanıcı/sunucu/kanal ID'leri korunur; yeniden girmen gerekmez. Önceki sürümden kalan yerel panel ayarları kaldırılır. Yeni ayar seçersen açılan maskeli token penceresine bot token'ını yapıştırıp ID'leri gir.
-4. Güncel gizlilik bildirimini okuyup `KABUL EDİYORUM` yazarak onayla. Her iki seçenek de özel Python ortamını, Discord botunu ve Windows oturum açılışını kurar.
+4. Güncel gizlilik bildirimini okuyup `KABUL EDİYORUM` yazarak onayla. Bildirim süreç adlarının ve ağ sayaçlarının kontrol kanalında gösterildiğini, kaynak kullanım geçmişinin yerel olarak 7 güne kadar saklandığını belirtir. Her iki seçenek de özel Python ortamını, Discord botunu ve Windows oturum açılışını kurar.
 5. Başarılı kurulumdan sonra özel Discord kanalını aç. Bot bir kontrol Embed'i göndermeli; kontrolleri altındaki düğmelerden kullan.
 
 Python 3.14 yoksa kurulum, WinGet ile resmi Python sürümünü kullanıcı hesabına yüklemeyi dener. WinGet ve internet ilk kurulumda gereklidir. Paketler uygulamanın özel sanal ortamına kurulur. Yeniden yapılandırma eski ortamı ve geçmiş logları silip yenisini kurar; genel Python kurulumlarına dokunmaz.
@@ -45,6 +48,7 @@ Python 3.14 yoksa kurulum, WinGet ile resmi Python sürümünü kullanıcı hesa
 
 - Düğmeler yalnızca kurulumdaki kullanıcı, sunucu ve kanal ID'si eşleştiğinde işler. Kontrol mesajı kanalı özel tutulmalıdır.
 - Ekran görüntüsü ve sistem durumu Discord'a yüklenir/gönderilir. Discord bu veriyi kendi hizmetinde işleyebilir; ekran görüntüsünü yalnızca güvenilir, özel kontrol kanalında iste.
+- Görünür uygulama adları, en çok kaynak kullanan süreç adları ve ağ trafiği özeti kontrol kanalında gösterilir. CPU, bellek ve disk örnekleri `%APPDATA%\PCActivityMonitor\metrics.sqlite3` içinde yerel olarak saklanır; 7 günden eski veriler temizlenir. Grafik yalnızca istediğinde Discord'a özel yanıt olarak yüklenir.
 - Bot token'ı `%APPDATA%\PCActivityMonitor\config.json` içinde saklanır ve uygulama tarafından şifrelenmez. Bu dosyayı paylaşma.
 - Güç işlemleri uygulamanın sabit Windows `shutdown.exe` çağrılarıdır; özel Embed üzerinden onay ister, 60 saniye gecikmeli başlar ve iptal edilebilir. Genel shell/komut çalıştırma yoktur.
 - Herhangi bir bot kullanıcısı için işlem yürütülmez; uygulama izinli kullanıcı kimliğini kontrol eder. Token'ı sızdırırsan Developer Portal'dan hemen sıfırla ve kurulumu yeni token ile yapılandır.
@@ -53,9 +57,9 @@ Python 3.14 yoksa kurulum, WinGet ile resmi Python sürümünü kullanıcı hesa
 
 ## Yeniden başlatma veya kaldırma
 
-- Kaynak dosyaları güncelledikten sonra `setup.bat` menüsündeki **3 — Restart the PC control panel** seçeneğiyle botu yeniden başlat.
-- Bot token'ı, izinli kullanıcıyı, sunucuyu veya kanalı değiştirmek için **1 — Install or reconfigure** seçip yeni ayar girme seçeneğini kullan.
-- **2 — Remove** çalışan servisi, Windows başlangıç kayıtlarını, bot token'ı dahil yerel ayarları, logları ve özel Python ortamını kaldırır. Kaynak dosyalar klasörde kalır.
+- Kaynak dosyaları güncelledikten sonra `setup.bat` menüsündeki **3 — Bilgisayar kontrol panelini yeniden başlat** seçeneğiyle botu yeniden başlat.
+- Bot token'ı, izinli kullanıcıyı, sunucuyu veya kanalı değiştirmek için **1 — Kur veya yeniden yapılandır** seçip yeni ayar girme seçeneğini kullan.
+- **2 — Bu kullanıcının kurulumunu ve yerel verileri kaldır** çalışan servisi, Windows başlangıç kayıtlarını, bot token'ı dahil yerel ayarları, geçmiş veritabanını, logları ve özel Python ortamını kaldırır. Kaynak dosyalar klasörde kalır.
 - Sistem tepsisinden uygulamayı oturum sonuna kadar kapatabilir veya otomatik başlangıcı devre dışı bırakabilirsin.
 
 ## Sorun giderme
