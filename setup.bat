@@ -1,6 +1,7 @@
 @echo off
 setlocal
 chcp 65001 >nul
+set "PYTHONUTF8=1"
 title Kişisel Bilgisayar Kontrol Paneli Kurulumu
 
 cd /d "%~dp0"
@@ -65,6 +66,15 @@ if not exist "%STATE_DIR%\config.json" (
 )
 if not exist "%VENV_PYTHON%" (
     echo [HATA] Özel Python ortamı bulunamadı. Yeniden kurmak için 1'i seçin.
+    goto :error
+)
+
+echo.
+echo Kurulum ayarları ve gizlilik onayı denetleniyor...
+"%VENV_PYTHON%" "%APP_DIR%\start_services.py" --check-config
+if errorlevel 1 (
+    echo.
+    echo Mevcut servis durdurulmadı. Yukarıdaki adımları tamamlayıp yeniden deneyin.
     goto :error
 )
 

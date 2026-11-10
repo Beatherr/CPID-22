@@ -12,7 +12,7 @@ import psutil
 
 
 UYGULAMA_ADI = "PCActivityMonitor"
-ONAY_SURUMU = "2026-10-30-discord-history-process-network"
+ONAY_SURUMU = "2026-11-10-reminders-and-controls"
 DURUM_DIZINI = Path(os.environ["APPDATA"]) / UYGULAMA_ADI
 AYAR_DOSYASI = DURUM_DIZINI / "config.json"
 HAZIRLIK_DOSYASI = DURUM_DIZINI / "discord_ready.json"
@@ -31,17 +31,31 @@ def baslangic_logu_yaz(message):
 def ayarlari_oku():
     with AYAR_DOSYASI.open("r", encoding="utf-8") as source:
         config = json.load(source)
-    consent = config.get("CONSENT")
+    if not isinstance(config, dict):
+        raise ValueError(
+            "Kurulum yapılandırması geçersiz. setup.bat içinden 1 ile yeniden yapılandırın."
+        )
     if (
         not config.get("BOT_TOKEN")
         or int(config.get("ALLOWED_USER_ID", 0)) <= 0
         or int(config.get("GUILD_ID", 0)) <= 0
         or int(config.get("CHANNEL_ID", 0)) <= 0
-        or not isinstance(consent, dict)
-        or not consent.get("accepted_at_utc")
-        or consent.get("notice_version") != ONAY_SURUMU
     ):
-        raise ValueError("Kurulum yapılandırması veya kullanıcı onayı eksik.")
+        raise ValueError(
+            "Kurulum ayarları eksik. setup.bat içinden 1 ile yeniden yapılandırın."
+        )
+
+    consent = config.get("CONSENT")
+    if not isinstance(consent, dict) or not consent.get("accepted_at_utc"):
+        raise ValueError(
+            "Gizlilik onayı bulunamadı. setup.bat içinden 1 ile yeniden yapılandırıp "
+            "bildirimi okuyarak onaylayın."
+        )
+    if consent.get("notice_version") != ONAY_SURUMU:
+        raise ValueError(
+            "Gizlilik bildirimi kurulumdan sonra güncellendi. setup.bat içinden 1'i seçin, "
+            "kayıtlı token ve ID'lerle devam edin, yeni bildirimi okuyup onaylayın."
+        )
     return config
 
 
@@ -158,7 +172,21 @@ def son_loglari_goster(log_names, line_limit=30):
 def ana():
     parser = argparse.ArgumentParser()
     parser.add_argument("--wait", action="store_true")
+    parser.add_argument(
+        "--check-config",
+        action="store_true",
+        help="Servisi durdurmadan önce kurulum ve gizlilik onayını doğrular.",
+    )
     args = parser.parse_args()
+    if args.check_config:
+        try:
+            ayarlari_oku()
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(f"Yapılandırma doğrulaması başarısız: {exc}", file=sys.stderr)
+            return 1
+        print("Kurulum yapılandırması ve gizlilik onayı güncel.")
+        return 0
+
     try:
         ayarlari_oku()
         pythonw_path = Path(

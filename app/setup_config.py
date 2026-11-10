@@ -7,7 +7,7 @@ import sys
 
 
 UYGULAMA_ADI = "PCActivityMonitor"
-ONAY_SURUMU = "2026-10-30-discord-history-process-network"
+ONAY_SURUMU = "2026-11-10-reminders-and-controls"
 
 
 def gizli_girdiyi_oku(metin):
@@ -54,6 +54,7 @@ def ayarlari_olustur(bot_anahtari, izinli_kullanici_kimligi, sunucu_kimligi, kan
         "ALLOWED_USER_ID": izinli_kullanici_kimligi,
         "GUILD_ID": sunucu_kimligi,
         "CHANNEL_ID": kanal_kimligi,
+        "TRACK_APP_USAGE": False,
         "CONSENT": {
             "notice_version": ONAY_SURUMU,
             "accepted_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -107,6 +108,28 @@ def mevcut_ayarlari_yukle():
     return config
 
 
+def uygulama_kullanim_takibini_iste(ayarlar):
+    varsayilan = ayarlar.get("TRACK_APP_USAGE") is True
+    varsayilan_metni = "E" if varsayilan else "H"
+    while True:
+        yanit = input(
+            "Aktif pencere uygulamalarının yaklaşık kullanım süresini izle? "
+            f"(E/H, varsayılan {varsayilan_metni}): "
+        ).strip().casefold()
+        if not yanit:
+            secim = varsayilan
+            break
+        if yanit in ("e", "evet", "y", "yes"):
+            secim = True
+            break
+        if yanit in ("h", "hayır", "hayir", "n", "no"):
+            secim = False
+            break
+        print("Evet için E, hayır için H gir.")
+    ayarlar["TRACK_APP_USAGE"] = secim
+    return secim
+
+
 def gizlilik_bildirimini_onayla(ayarlar, kayitli_ayarlari_kullan):
     if kayitli_ayarlari_kullan:
         print("\nKAYITLI AYARLAR")
@@ -121,12 +144,25 @@ def gizlilik_bildirimini_onayla(ayarlar, kayitli_ayarlari_kullan):
         print(f"- Butonlu PC kontrol Embed'inin gönderileceği özel kanal ID'si: {ayarlar['CHANNEL_ID']}")
         print("- Yalnızca Discord üzerinden kontrol kullanılacaktır; yerel web paneli kurulmaz.")
 
-    print("- Discord panelinde sistem durumu, süreç özeti, ağ trafiği ve güç kontrolleri gösterilir.")
+    print("- Discord panelinde sistem durumu, süreç özeti, ağ trafiği ve bilgisayar kontrolleri gösterilir.")
     print("- Sistem bilgileri, görünür uygulama adları ve en çok kaynak kullanan süreç adları Discord'a gönderilir.")
-    print("- Etkin ağ arayüzü sayısı, ağ sayaçları ve anlık trafik hızları panelde gösterilir.")
+    print("- Ağ geçidi adresi kontrol panelinde gösterilir ve yalnızca ağ geçidine ping atılır; genel internete ping gönderilmez.")
+    print("- Başlangıç uygulamaları yalnızca istendiğinde özel yanıtla listelenir; hiçbir ayar değiştirilmez.")
+    print("- Destekleniyorsa donanım sıcaklıkları ve işlemci/bellek/disk kullanım yüzdeleri panelde gösterilir.")
+    print("- Kaynak eşiklerinde Discord uyarısı gönderilmez; renkler yalnızca anlık değerleri belirtir.")
     print("- CPU, bellek ve disk geçmişi yerel veritabanında en fazla 7 gün saklanır.")
     print("- Geçmiş grafikleri yalnızca istediğinde Discord'a özel yanıt olarak gönderilir.")
     print("- Uygulama adları gösterilir; pencere başlıkları ve içerikleri alınmaz.")
+    print("- Seçilen görünür uygulama penceresi öne getirilebilir; pencere başlığı okunmaz.")
+    print("- Hatırlatıcı notları yerel olarak saklanır; zamanı geldiğinde bu bilgisayarda sesli uyarı penceresi açılır, Discord'a bildirim gönderilmez.")
+    print("- Yeniden başlatma veya kapatma 1 dakika ile 7 gün arasında zamanlanabilir; onay ve iptal gerekir.")
+    uygulama_takibi_acik = uygulama_kullanim_takibini_iste(ayarlar)
+    if uygulama_takibi_acik:
+        print("- Aktif pencerenin uygulama adı ve yaklaşık süresi yerel olarak 7 gün saklanır.")
+        print("- 5 dakikadan uzun boşta kalma süresi sayılmaz; uygulama adları Discord'a otomatik gönderilmez.")
+        print("- Son 7 gün özeti yalnızca Discord'daki özel kullanım düğmesine bastığında gönderilir.")
+    else:
+        print("- Aktif pencere uygulama kullanım süresi takibi kapalıdır.")
     print("- Ekran görüntüsü yalnızca düğmeye bastığında Discord servisine gönderilir.")
     print("- Discord, ekran görüntüsü dosyasını ve etkileşimleri kendi hizmetinde işleyebilir.")
     print("- Bot token'ı yerel ayar dosyasında saklanır; dosyayı veya token'ı paylaşma.")
