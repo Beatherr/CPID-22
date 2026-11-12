@@ -911,7 +911,7 @@ def uygulama_kullanimini_izle():
         kapatma_olayi.wait(UYGULAMA_KULLANIMI_ARALIGI_SANIYE)
 
 
-def durum_topla():
+def durum_topla(kaydet_gecmis=True):
     global bekleyen_guc_islemi, bekleyen_islem_bitis_zamani
     try:
         cpu = round(psutil.cpu_percent(interval=None))
@@ -967,7 +967,9 @@ def durum_topla():
         applications, unavailable_applications = [], 0
         applications_error = "Uygulama listesi alınamadı; hata client.log dosyasına kaydedildi."
 
-    history_error = gecmisi_kaydet(cpu, memory, disk_percent)
+    history_error = (
+        gecmisi_kaydet(cpu, memory, disk_percent) if kaydet_gecmis else None
+    )
     return {
         "bilgisayar_adi": socket.gethostname(),
         "kullanici_adi": os.environ.get("USERNAME", "Windows kullanıcısı"),

@@ -11,6 +11,7 @@ Açık uygulamalar bölümünde yalnızca görünür pencereye sahip uygulamalar
 Embed altında durum yenileme düğmesi ve diğer işlemleri içeren tek bir menü bulunur:
 
 - **Durumu yenile** — Durum Embed'ini anında günceller; doluluk renkleri yalnızca anlık kullanım seviyesini gösterir.
+- **Sistem sağlığı ve öneriler** — CPU, bellek, disk ve desteklenen sıcaklık sensörlerini isteğe bağlı kontrol eder; yüksek kullanım için kısa önerileri yalnızca sana özel yanıtlar. Uyarı eşiği CPU/bellek/disk için %80, kritik eşik %90; sıcaklık için sırasıyla 85°C ve 95°C'dir. Ek geçmiş veya sürekli izleme oluşturmaz.
 - **Kaynak geçmişi** — CPU, bellek ve disk kullanımının 1 saat, 24 saat veya 7 günlük grafiğini özel yanıtla gönderir.
 - **Uygulama süreleri / Günlük kullanım grafiği** — İsteğe bağlı aktif pencere takibiyle son 7 günün en çok kullanılan uygulamalarını ve günlere göre grafiği özel yanıtla gösterir.
 - **Başlangıç uygulamaları** — Windows başlangıç kayıtlarını yalnızca listeler; hiçbir uygulama veya ayar değiştirilmez.
@@ -19,7 +20,7 @@ Embed altında durum yenileme düğmesi ve diğer işlemleri içeren tek bir men
 - **Hatırlatıcı kur / Hatırlatıcıları yönet** — Tarih (GG.AA.YYYY) ve saat (SS:DD) girerek süre sınırı olmadan ileri bir zamana notlu alarm kurabilir, bekleyen alarmları görebilir ve iptal edebilirsin. Kurulumdan sonra sana özel bir teyit gösterilir. Zamanı gelince bu bilgisayarda sistem sesi çalar ve önde bir uyarı penceresi açılır; alarm Discord kanalına veya DM olarak gönderilmez. Hatırlatıcı kaydı uygulama yeniden başlatılsa da korunur.
 - **Yeniden başlat / Bilgisayarı kapat / Planlanan işlemi iptal et** — 1 dakika ile 7 gün arasında zaman seçilir; işlem ek onay gerektirir ve başlamadan iptal edilebilir.
 
-Durum paneli en çok bellek kullanan beş sürecin adını, yaklaşık CPU/RAM kullanımını ve Windows açılışından beri toplam ağ gönderim/alım miktarını gösterir. Anlık ağ hızları ardışık ölçümlerden hesaplanır; ilk ölçümde hız henüz gösterilmeyebilir.
+Durum paneli en çok bellek kullanan beş sürecin adını, yaklaşık CPU/RAM kullanımını ve Windows açılışından beri toplam ağ gönderim/alım miktarını gösterir. Anlık ağ hızları ardışık ölçümlerden hesaplanır; ilk ölçümde hız henüz gösterilmeyebilir. Panel ayrıca CPU, bellek, disk ve mevcutsa donanım sıcaklıklarını kullanarak bir sağlık özeti gösterir. Bu özet yalnızca anlık değerleri değerlendirir; ölçüm geçmişine ek kayıt yazmaz ve bilgisayarda otomatik işlem yapmaz.
 
 Bot yeniden başlarsa aynı kontrol mesajını bulup günceller. Mesaj silinmişse yenisini oluşturur. Buton yanıtları ve ekran görüntüsü Discord'da yalnızca sana görünür (ephemeral). Ana durum Embed'i, kurulumda seçtiğin özel kanalda görünür; bu kanalı yalnızca senin ve botun görebildiğinden emin ol.
 
