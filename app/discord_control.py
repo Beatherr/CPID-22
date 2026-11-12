@@ -679,7 +679,9 @@ class KontrolPaneliGorunumu(discord.ui.View):
             return
         await interaction.response.edit_message(embed=embed, view=self)
 
-    async def sistem_sagligi_raporu(self, interaction: discord.Interaction):
+    async def sistem_sagligi_raporu(
+        self, interaction: discord.Interaction, button: discord.ui.Button | None = None
+    ):
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
             status = await asyncio.to_thread(pc.durum_topla, kaydet_gecmis=False)
