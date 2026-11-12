@@ -19,7 +19,10 @@ HAZIRLIK_DOSYASI = DURUM_DIZINI / "discord_ready.json"
 BASLATMA_KILIT_DOSYASI = DURUM_DIZINI / "client_start.lock"
 BASLANGIC_GUNLUGU = DURUM_DIZINI / "startup.log"
 UYGULAMA_DIZINI = Path(__file__).resolve().parent
-ISTEMCI_BETIGI = os.path.normcase(os.path.abspath(UYGULAMA_DIZINI / "client.py"))
+PAKETLENMIS = getattr(sys, "frozen", False)
+ISTEMCI_BETIGI = os.path.normcase(
+    os.path.abspath(sys.executable if PAKETLENMIS else UYGULAMA_DIZINI / "client.py")
+)
 
 
 def baslangic_logu_yaz(message):
@@ -74,10 +77,11 @@ def surec_istemciyle_eslesiyor(process):
         command_line = getattr(process, "info", {}).get("cmdline")
         if command_line is None:
             command_line = process.cmdline()
-        return any(
+        matches_client = any(
             os.path.normcase(os.path.abspath(argument)) == ISTEMCI_BETIGI
             for argument in command_line or []
         )
+        return matches_client and (not PAKETLENMIS or "--client" in (command_line or []))
     except (OSError, psutil.AccessDenied, psutil.NoSuchProcess):
         return False
 
@@ -122,8 +126,13 @@ def hazir_istemci_surecini_bul():
 def istemciyi_baslat(python_path):
     output_path = DURUM_DIZINI / "client.log"
     with output_path.open("a", encoding="utf-8") as output:
+        command = (
+            [sys.executable, "--client"]
+            if PAKETLENMIS
+            else [str(python_path), str(UYGULAMA_DIZINI / "client.py")]
+        )
         return subprocess.Popen(
-            [str(python_path), str(UYGULAMA_DIZINI / "client.py")],
+            command,
             cwd=str(UYGULAMA_DIZINI),
             stdin=subprocess.DEVNULL,
             stdout=output,
@@ -189,14 +198,16 @@ def ana():
 
     try:
         ayarlari_oku()
-        pythonw_path = Path(
-            (DURUM_DIZINI / "pythonw_path.txt").read_text(encoding="utf-16").strip()
-        )
-        if not pythonw_path.is_file():
-            raise FileNotFoundError(f"pythonw.exe bulunamadı: {pythonw_path}")
-        python_path = pythonw_path.with_name("python.exe")
-        if not python_path.is_file():
-            raise FileNotFoundError(f"python.exe bulunamadı: {python_path}")
+        python_path = None
+        if not PAKETLENMIS:
+            pythonw_path = Path(
+                (DURUM_DIZINI / "pythonw_path.txt").read_text(encoding="utf-16").strip()
+            )
+            if not pythonw_path.is_file():
+                raise FileNotFoundError(f"pythonw.exe bulunamadı: {pythonw_path}")
+            python_path = pythonw_path.with_name("python.exe")
+            if not python_path.is_file():
+                raise FileNotFoundError(f"python.exe bulunamadı: {python_path}")
 
         process, started = istemciyi_baslat_veya_bul(python_path)
         if started:

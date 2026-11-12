@@ -13,6 +13,7 @@ from discord import app_commands
 
 import client as pc
 from reminders import hatirlatici_zamani_olustur, masaustu_bildirimi_goster
+from system_health import sistem_sagligi_ozetini_olustur
 
 
 UYGULAMA_ADI = "PCActivityMonitor"
@@ -57,6 +58,12 @@ def renkli_yuk_cubugu(yuzde, genislik=10):
 
 
 def durum_rengi(status):
+    health = sistem_sagligi_ozetini_olustur(status)
+    if health["durum"] == "Kritik":
+        return discord.Color.red()
+    if health["durum"] == "Dikkat":
+        return discord.Color.orange()
+
     en_yuksek = max(
         status["cpu"],
         status["bellek_yuzde"],
@@ -85,12 +92,20 @@ def durum_gomulusu_olustur(status=None):
     embed = discord.Embed(
         title="🖥️ Kişisel PC Kontrol Merkezi",
         description=(
-            "Anlık değerler • Kaynak eşiği uyarısı gönderilmez\n"
+            "Canlı sistem özeti • Kaynak uyarıları yalnızca panelde gösterilir\n"
             "🟩 Normal  🟨 Orta  🟧 Yüksek  🟥 Çok yüksek"
         ),
         color=durum_rengi(status),
         timestamp=now,
     )
+    embed.set_author(name=f"{status['bilgisayar_adi']} • PCActivityMonitor")
+    health = sistem_sagligi_ozetini_olustur(status)
+    health_summary = f"**{health['emoji']} {health['durum']}**"
+    if health["uyarilar"]:
+        health_summary += f" · {health['uyarilar'][0]}"
+    else:
+        health_summary += " · Güncel değerlerde yüksek kaynak kullanımı yok."
+    embed.add_field(name="🩺 Sistem sağlığı", value=health_summary, inline=False)
     embed.add_field(
         name="💻 Bilgisayar",
         value=(
@@ -226,16 +241,7 @@ def durum_gomulusu_olustur(status=None):
         else "Görünür uygulama penceresi bulunamadı.",
         inline=True,
     )
-    embed.add_field(
-        name="🔌 Sistem",
-        value=(
-            f"**Son açılış:** {status['baslangic_zamani']}\n"
-            f"**İşletim sistemi:** {status['isletim_sistemi']}\n"
-            f"**Pil:** {status['pil_durumu']}\n"
-            f"**Güç işlemi:** {power_state}"
-        ),
-        inline=False,
-    )
+    embed.add_field(name="🔌 Güç durumu", value=power_state, inline=False)
     embed.set_footer(
         text=(
             f"PC Kontrol • Son güncelleme: {now.strftime('%d.%m.%Y %H:%M:%S')} "
@@ -599,6 +605,9 @@ class KontrolMenusuSelect(discord.ui.Select):
             else "Uygulama takibini sürdür"
         )
         options = [
+            discord.SelectOption(
+                label="Sistem sağlığı ve öneriler", value="health", emoji="🩺"
+            ),
             discord.SelectOption(label="Kaynak geçmişi", value="history", emoji="📈"),
             discord.SelectOption(label="Uygulama süreleri", value="usage", emoji="🎮"),
             discord.SelectOption(label="Günlük kullanım grafiği", value="usage_chart", emoji="📊"),
@@ -628,6 +637,7 @@ class KontrolMenusuSelect(discord.ui.Select):
             raise RuntimeError("Kontrol menüsü beklenen panele bağlı değil.")
         islem = self.values[0]
         handlers = {
+            "health": panel.sistem_sagligi_raporu,
             "history": panel.kaynak_gecmisi,
             "usage": panel.uygulama_kullanim_sureleri,
             "usage_chart": panel.gunluk_kullanim_grafigi,
@@ -668,6 +678,53 @@ class KontrolPaneliGorunumu(discord.ui.View):
             await interaction.response.send_message(embed=hata_gomulusu_olustur("Durum alınamadı", str(exc)), ephemeral=True)
             return
         await interaction.response.edit_message(embed=embed, view=self)
+
+    async def sistem_sagligi_raporu(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            status = await asyncio.to_thread(pc.durum_topla, kaydet_gecmis=False)
+        except RuntimeError as exc:
+            await interaction.followup.send(
+                embed=hata_gomulusu_olustur("Sistem sağlığı okunamadı", str(exc)),
+                ephemeral=True,
+            )
+            return
+
+        health = sistem_sagligi_ozetini_olustur(status)
+        description = (
+            "\n".join(f"• {warning}" for warning in health["uyarilar"])
+            if health["uyarilar"]
+            else "Güncel CPU, bellek, disk ve erişilebilen sıcaklık değerlerinde yüksek kullanım yok."
+        )
+        color = (
+            discord.Color.red()
+            if health["durum"] == "Kritik"
+            else discord.Color.orange()
+            if health["durum"] == "Dikkat"
+            else discord.Color.blurple()
+        )
+        embed = discord.Embed(
+            title=f"{health['emoji']} Sistem sağlığı: {health['durum']}",
+            description=description,
+            color=color,
+            timestamp=datetime.now().astimezone(),
+        )
+        if health["oneriler"]:
+            embed.add_field(
+                name="Öneriler",
+                value="\n".join(f"• {recommendation}" for recommendation in health["oneriler"]),
+                inline=False,
+            )
+        if health["eksik_veriler"]:
+            embed.add_field(
+                name="Eksik ölçümler",
+                value="\n".join(f"• {item}" for item in health["eksik_veriler"]),
+                inline=False,
+            )
+        embed.set_footer(
+            text="Yalnızca anlık ölçümlere dayanır; hiçbir işlem otomatik yapılmaz."
+        )
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def ekran_goruntusu_gonder(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True, thinking=True)

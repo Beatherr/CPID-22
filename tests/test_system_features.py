@@ -11,6 +11,43 @@ from app import client
 
 
 class SystemFeatureTests(unittest.TestCase):
+    def test_status_collection_can_skip_persisting_history(self):
+        memory = SimpleNamespace(
+            percent=40,
+            total=8 * 1024**3,
+            used=3 * 1024**3,
+            available=5 * 1024**3,
+        )
+        with (
+            patch.object(client.psutil, "cpu_percent", return_value=20),
+            patch.object(client.psutil, "virtual_memory", return_value=memory),
+            patch.object(client.psutil, "boot_time", return_value=90_000),
+            patch.object(client.psutil, "cpu_freq", return_value=None),
+            patch.object(client.psutil, "sensors_battery", return_value=None),
+            patch.object(client.psutil, "cpu_count", return_value=4),
+            patch.object(client.time, "time", return_value=100_000),
+            patch.object(
+                client, "disk_bilgilerini_topla", return_value=([], 30, 70, 100)
+            ),
+            patch.object(client, "ag_ozetini_topla", return_value={}),
+            patch.object(
+                client,
+                "varsayilan_ag_gecidi_kontrol_et",
+                return_value={"gecit": None, "erisilebilir": None, "hata": None},
+            ),
+            patch.object(client, "sicakliklari_topla", return_value=[]),
+            patch.object(
+                client, "kaynak_tuketimindeki_surecleri_getir", return_value=([], 0)
+            ),
+            patch.object(client, "acik_uygulamalari_topla", return_value=([], 0)),
+            patch.object(client, "uygulama_takibini_durumdan_oku", return_value=False),
+            patch.object(client, "gecmisi_kaydet") as save_history,
+        ):
+            status = client.durum_topla(kaydet_gecmis=False)
+
+        save_history.assert_not_called()
+        self.assertIsNone(status["gecmis_hatasi"])
+
     def test_gateway_check_only_pings_the_resolved_local_gateway(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             results = [

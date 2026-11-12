@@ -4,13 +4,14 @@ Windows bilgisayarını kendi Discord sunucundaki tek bir kalıcı kontrol mesaj
 
 ## Discord kontrol Embed'i
 
-Bot açıldığında belirlediğin özel kanala tek bir kontrol Embed'i gönderir. PC adı/kullanıcısı, renkli CPU/RAM/disk kullanım göstergeleri, bağlı disklerin kapasitesi, donanım destekliyorsa sıcaklık sensörleri, ağ trafiği ve varsayılan ağ geçidi durumu, işletim sistemi, çalışma süresi, süreçler ve açık uygulamalar gösterilir. Durum 60 saniyede bir güncellenir. Kaynak eşiklerine göre otomatik uyarı gönderilmez.
+Bot açıldığında belirlediğin özel kanala tek bir kontrol Embed'i gönderir. PC adı/kullanıcısı, sistem sağlığı özeti, renkli CPU/RAM/disk kullanım göstergeleri, bağlı disklerin kapasitesi, donanım destekliyorsa sıcaklık sensörleri, ağ trafiği ve varsayılan ağ geçidi durumu, işletim sistemi, çalışma süresi, süreçler ve açık uygulamalar gösterilir. Durum 60 saniyede bir güncellenir. Sağlık önerileri ve eşik uyarıları yalnızca panelde gösterilir; otomatik işlem yapılmaz.
 
 Açık uygulamalar bölümünde yalnızca görünür pencereye sahip uygulamaların adı gösterilir; pencere başlıkları, belge adları ve içerikleri okunmaz veya Discord'a gönderilmez. Uygulama adları durum Embed'iyle Discord'a gönderilir. Arka planda çalışan ya da sistem tepsisinde simge durumundaki uygulamalar görünmeyebilir.
 
 Embed altında durum yenileme düğmesi ve diğer işlemleri içeren tek bir menü bulunur:
 
 - **Durumu yenile** — Durum Embed'ini anında günceller; doluluk renkleri yalnızca anlık kullanım seviyesini gösterir.
+- **Sistem sağlığı ve öneriler** — CPU, bellek, disk ve erişilebilen sıcaklık ölçümlerini isteğe bağlı, özel yanıtla değerlendirir; bu görüntüleme kaynak geçmişine yeni kayıt eklemez.
 - **Kaynak geçmişi** — CPU, bellek ve disk kullanımının 1 saat, 24 saat veya 7 günlük grafiğini özel yanıtla gönderir.
 - **Uygulama süreleri / Günlük kullanım grafiği** — İsteğe bağlı aktif pencere takibiyle son 7 günün en çok kullanılan uygulamalarını ve günlere göre grafiği özel yanıtla gösterir.
 - **Başlangıç uygulamaları** — Windows başlangıç kayıtlarını yalnızca listeler; hiçbir uygulama veya ayar değiştirilmez.
@@ -48,7 +49,7 @@ Bot token'ı Windows'ta ayrı, maskeli bir giriş penceresinde istenir; token'ı
 4. Aktif pencere uygulama süre takibini isteğe bağlı açıp kapat; ardından güncel gizlilik bildirimini okuyup `KABUL EDİYORUM` yazarak onayla. Takibi açarsan yalnızca uygulama adları ve yaklaşık aktif süre yerel olarak saklanır; içerik ve pencere başlıkları izlenmez. Her iki seçenek de özel Python ortamını, Discord botunu ve Windows oturum açılışını kurar.
 5. Başarılı kurulumdan sonra özel Discord kanalını aç. Bot bir kontrol Embed'i göndermeli; kontrolleri altındaki düğmelerden kullan.
 
-Python 3.14 yoksa kurulum, WinGet ile resmi Python sürümünü kullanıcı hesabına yüklemeyi dener. WinGet ve internet ilk kurulumda gereklidir. Paketler uygulamanın özel sanal ortamına kurulur. Yeniden yapılandırma eski ortamı ve geçmiş logları silip yenisini kurar; genel Python kurulumlarına dokunmaz.
+Python 3.14 yoksa kurulum, WinGet ile resmi Python sürümünü kullanıcı hesabına yükler ve Python klasörlerini bu kullanıcının `PATH` değişkenine ekler. İlk kurulum için WinGet ve internet bağlantısı gereklidir. Paketler uygulamanın özel sanal ortamına kurulur. Yeniden yapılandırma eski ortamı ve geçmiş logları silip yenisini kurar; genel Python kurulumlarına dokunmaz.
 
 ## Güvenlik ve gizlilik
 
@@ -59,7 +60,7 @@ Python 3.14 yoksa kurulum, WinGet ile resmi Python sürümünü kullanıcı hesa
 - Görünür uygulama adları, en çok kaynak kullanan süreç adları, ağ geçidi adresi ve ağ trafiği özeti kontrol kanalında gösterilir. CPU, bellek ve disk örnekleri `%APPDATA%\PCActivityMonitor\metrics.sqlite3` içinde yerel olarak saklanır; 7 günden eski veriler temizlenir. Grafik yalnızca istediğinde Discord'a özel yanıt olarak yüklenir.
 - Aktif pencere uygulama süre takibi varsayılan olarak kapalıdır. Açarsan uygulama adı ve yaklaşık süre aynı yerel veritabanında tutulur; pencere başlığı, web adresi, belge adı veya içerik kaydedilmez. Yalnızca istediğinde, en çok kullanılan uygulamaların son 7 günlük özeti Discord'a özel yanıtla gönderilir. Özeti açıp **Yerel geçmişi sil** düğmesiyle bu kayıtları silebilirsin. Takibi kapatmak için `setup.bat` ile yeniden yapılandırıp soruya **H** yanıtını ver.
 - Ağ durumu için yalnızca yerel varsayılan ağ geçidi kontrol edilir; internet servisine ping gönderilmez. Başlangıç uygulamaları yalnızca görüntülenir, sistem ayarı değiştirilmez. Donanım sıcaklıkları yalnızca sürücü sağlıyorsa gösterilir.
-- CPU/RAM/disk renk göstergeleri bilgi amaçlıdır; kaynak eşik uyarısı veya otomatik DM yoktur. Hatırlatıcılar yalnızca bu bilgisayarda sesli uyarı verir.
+- CPU/RAM/disk renk göstergeleri bilgi amaçlıdır; sistem sağlığı eşik uyarıları yalnızca panelde gösterilir, otomatik DM veya güç işlemi yoktur. Hatırlatıcılar yalnızca bu bilgisayarda sesli uyarı verir.
 - Bot token'ı `%APPDATA%\PCActivityMonitor\config.json` içinde saklanır ve uygulama tarafından şifrelenmez. Bu dosyayı paylaşma.
 - Güç işlemleri uygulamanın sabit Windows `shutdown.exe` çağrılarıdır; 1 dakika ile 7 gün arasında zamanlanır, onay ister ve başlamadan iptal edilebilir. Genel shell/komut çalıştırma yoktur.
 - Herhangi bir bot kullanıcısı için işlem yürütülmez; uygulama izinli kullanıcı kimliğini kontrol eder. Token'ı sızdırırsan Developer Portal'dan hemen sıfırla ve kurulumu yeni token ile yapılandır.

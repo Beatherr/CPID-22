@@ -112,6 +112,10 @@ if not exist "%APP_DIR%\discord_control.py" (
     echo [HATA] app\discord_control.py bulunamadı.
     goto :error
 )
+if not exist "%APP_DIR%\system_health.py" (
+    echo [HATA] app\system_health.py bulunamadı.
+    goto :error
+)
 if not exist "%APP_DIR%\start_hidden.vbs" (
     echo [HATA] app\start_hidden.vbs bulunamadı.
     goto :error
